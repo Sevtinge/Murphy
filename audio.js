@@ -161,9 +161,9 @@ const TIMBRES = {
   bell: { partials: [[1, 1], [2.72, .37], [5.43, .19], [8.11, .07]], decay: 3.2, attack: .002, volume: .37 },
   synthLead: { partials: [[1, 1], [2, .7], [3, .46], [4, .28], [5, .17]], decay: .18, attack: .01, volume: .28, vibrato: .003 },
 };
-export function synthesizeWav(piece, instrument = 'piano') {
+export function synthesizeWav(piece, instrument = 'piano', sampleRateOverride = 0) {
   const preset = TIMBRES[instrument] || TIMBRES.piano;
-  const sampleRate = piece.bpm < 60 ? 8000 : piece.bpm < 120 ? 16000 : 22050;
+  const sampleRate = sampleRateOverride || (piece.bpm < 60 ? 8000 : piece.bpm < 120 ? 16000 : 22050);
   const samplesPerTick = sampleRate * 60 / (piece.bpm * TICKS_PER_BEAT);
   const sampleCount = Math.ceil(piece.bars.length * piece.barTicks * samplesPerTick);
   const buffer = new ArrayBuffer(44 + sampleCount * 2);

@@ -25,6 +25,7 @@ import { EASTER_TEXT, EASTER_BITMAP, DARK_CROSS_TEXT, DARK_CROSS_BITMAP, DARK_RE
 import { jianpuToken } from './notation.js';
 import { displayLineBreaks } from './text-format.js';
 import { trackMetadata } from './media-info.js';
+import { buildBackgroundBatch, retimbreBackgroundBatch, segmentAtTime, pieceDuration, isIOSBrowser } from './background-audio.js';
 
 const $ = (selector) => document.querySelector(selector);
 const dictionaries = {
@@ -38,7 +39,7 @@ const dictionaries = {
     livePreview: 'LIVE PREVIEW', imageEyebrow: '02', imageTitle: 'Image',
     imageDescription: 'Fill every pixel with a random color.\nYou might get a landscape, a classic masterpiece, your cat, or even the face of the person in front of the screen.\nMost of the time it just looks like meaningless colored pixels......or does it?', width: 'Width', widthHint: '16–1920 px',
     height: 'Height', heightHint: '8–1080 px', audioEyebrow: '03', audioTitle: 'Audio',
-    audioDescription: 'Random pitches, beats, BPM, and content.\nIt has the air of a modern-day Beethoven.\nOh, that damned score—even Liszt would be helpless.', bars: 'Measures', barsHint: '4–20 measures', darkBarsHint: '1 measure · fixed preset',
+    audioDescription: 'Random pitches, beats, BPM, and content.\nIt has the air of a modern-day Beethoven.\nOh, that damned score—even Liszt would be helpless.', bars: 'Measures', barsHint: '4–32 measures', darkBarsHint: '1 measure · fixed preset',
     timeSignature: 'TIME SIGNATURE', tempo: 'TEMPO', instrument: 'INSTRUMENT', piano: 'Piano', scorePreview: 'GENERATED CONTENT',
     pause: 'Pause generation', resume: 'Resume generation', live: 'Generating', paused: 'Paused',
     exportTxt: 'Export .txt', exportPng: 'Export .png', exportWav: 'Export .wav',
@@ -54,7 +55,7 @@ const dictionaries = {
     acousticGuitar: 'Acoustic guitar', harp: 'Harp', bass: 'Bass guitar', violin: 'Violin', cello: 'Cello',
     flute: 'Flute', clarinet: 'Clarinet', saxophone: 'Saxophone', trumpet: 'Trumpet', bell: 'Bell', synthLead: 'Synth lead',
     invalidSeed: 'Use only A–Z, a–z, 0–9 and ! @ # $ % ^ & * _ - = + / (no spaces).', emptySeed: 'Enter a seed first.', easterEgg: 'Easter egg',
-    ageTitle: 'Confrim your age.', ageDescription: 'In accordance with relevant laws, we need to know your age in order to provide the corresponding services.\nAre you 18 years of age or older?',
+    ageTitle: 'Confirm your age.', ageDescription: 'In accordance with relevant laws, we need to know your age in order to provide the corresponding services.\nAre you 18 years of age or older?',
     ageYes: 'Yes', ageNo: 'No', ageDenied: 'We are unable to provide service to you.',
   },
   zh: {
@@ -67,7 +68,7 @@ const dictionaries = {
     livePreview: '实时预览', imageEyebrow: '02', imageTitle: '图片',
     imageDescription: '以随机的颜色填充每一个像素。\n可能会生成风景画、经典名作、你家的猫猫，甚至屏幕前那个人的脸。\n不过大多数时候看起来都是毫无意义的彩点......是吗？', width: '宽度', widthHint: '16–1920 像素',
     height: '高度', heightHint: '8–1080 像素', audioEyebrow: '03', audioTitle: '音频',
-    audioDescription: '随机音调、节拍、BPM、内容。\n颇有当代贝多芬的风范。\n哦这该死的谱子，李斯特看了也无能为力。', bars: '小节数', barsHint: '4–20 小节', darkBarsHint: '固定 1 小节',
+    audioDescription: '随机音调、节拍、BPM、内容。\n颇有当代贝多芬的风范。\n哦这该死的谱子，李斯特看了也无能为力。', bars: '小节数', barsHint: '4–32 小节', darkBarsHint: '固定 1 小节',
     timeSignature: '拍号', tempo: '速度', instrument: '音色', piano: '钢琴', scorePreview: '生成内容',
     pause: '暂停生成', resume: '继续生成', live: '生成中', paused: '已暂停',
     exportTxt: '导出 .txt', exportPng: '导出 .png', exportWav: '导出 .wav',
@@ -97,6 +98,7 @@ const states = Object.fromEntries(['text', 'image', 'audio'].map((type) => {
 }));
 let audioUrl = null;
 let audioChain = false;
+const IOS_AUDIO = isIOSBrowser(navigator);
 const intervals = { text: 100, image: 100 };
 let pausedLengthTimer = 0;
 let activeType = 'text';
@@ -221,6 +223,7 @@ function schedule(type, callback) {
   }
 }
 function stopGeneration(type) {
+  if (type === 'audio' && IOS_AUDIO) $('#audio-player').loop = false;
   if (type === 'text') { clearTimeout(pausedLengthTimer); pausedLengthTimer = 0; }
   states[type].paused = true;
   clearInterval(states[type].timer);
@@ -391,12 +394,14 @@ function clock(seconds) {
 }
 function updatePlaybackControls() {
   const player = $('#audio-player');
-  const piece = states.audio.piece;
-  const duration = Number.isFinite(player.duration) ? player.duration
-    : piece ? piece.bars.length * piece.barTicks * 60 / (piece.bpm * TICKS_PER_BEAT) : 0;
+  const state = states.audio;
+  const segment = state.batch?.segments[state.batch.activeIndex];
+  const duration = segment?.duration ?? (Number.isFinite(player.duration) ? player.duration
+    : state.piece ? pieceDuration(state.piece) : 0);
+  const position = segment ? Math.max(0, Math.min(duration, player.currentTime - segment.start)) : player.currentTime;
   $('#audio-play-toggle').textContent = player.paused ? `▶ ${t('playCurrent')}` : `Ⅱ ${t('pauseCurrent')}`;
-  $('#audio-seek').value = duration > 0 ? String(Math.round(player.currentTime / duration * 1000)) : '0';
-  $('#audio-time').textContent = `${clock(player.currentTime)} / ${clock(duration)}`;
+  $('#audio-seek').value = duration > 0 ? String(Math.round(position / duration * 1000)) : '0';
+  $('#audio-time').textContent = `${clock(position)} / ${clock(duration)}`;
 }
 function updateMediaMetadata() {
   const state = states.audio;
@@ -421,14 +426,42 @@ function clearPlaybackHighlight() {
   activeNote?.classList.remove('is-playing');
   activeNote = null;
 }
+function syncBackgroundSegment() {
+  const state = states.audio;
+  const batch = state.batch;
+  if (!batch) return false;
+  const player = $('#audio-player');
+  const time = player.currentTime;
+  const wrapped = !player.paused && batch.lastTime > batch.totalDuration - 1 && time < 1 && time < batch.lastTime - .5;
+  batch.lastTime = time;
+  if (wrapped && !document.hidden && !state.paused && audioChain) {
+    generateAudio(randomSeed(), true); // replace a completed foreground cycle with fresh randomness
+    return true;
+  }
+  const index = segmentAtTime(batch, time);
+  if (index !== batch.activeIndex) {
+    batch.activeIndex = index;
+    const segment = batch.segments[index];
+    state.piece = segment.piece;
+    state.seed = segment.seed;
+    state.blob = segment.blob;
+    $('#audio-seed-input').value = segment.seed;
+    $('#audio-meta').textContent = `${segment.piece.bars.length} ${t('measures')}`;
+    renderScore(segment.piece);
+    updateMediaMetadata();
+  }
+  return false;
+}
 function updatePlaybackHighlight() {
   const player = $('#audio-player');
   const state = states.audio;
-  if (player.paused || player.ended || !state.piece) return;
+  if (document.hidden || player.paused || player.ended || !state.piece) return;
+  if (syncBackgroundSegment()) return;
   const now = performance.now();
   if (now - lastProgressPaint >= 100) { updatePlaybackControls(); lastProgressPaint = now; }
   const timeline = state.noteTimeline || [];
-  const tick = player.currentTime * state.piece.bpm * TICKS_PER_BEAT / 60;
+  const segment = state.batch?.segments[state.batch.activeIndex];
+  const tick = (player.currentTime - (segment?.start || 0)) * state.piece.bpm * TICKS_PER_BEAT / 60;
   let low = 0, high = timeline.length;
   while (low < high) {
     const middle = (low + high) >>> 1;
@@ -546,16 +579,27 @@ function generateAudio(seed = randomSeed(), autoplay = false) {
     : isDarkSeed(seed, language) ? composeDark()
       : compose(Number($('#audio-bars').value), seededRandom(seed, 'audio'));
   const instrument = $('#audio-instrument').value;
-  const blob = synthesizeWav(piece, instrument);
+  // iOS may suspend page JavaScript in the background. A native audio element
+  // can keep looping a bounded, pre-rendered WAV without an `ended` callback.
+  const continuousIOS = IOS_AUDIO && autoplay && !states.audio.easterEgg;
+  const batch = continuousIOS && pieceDuration(piece) < 180
+    ? buildBackgroundBatch(piece, seed, Number($('#audio-bars').value), instrument) : null;
+  const blob = batch ? batch.segments[0].blob : synthesizeWav(piece, instrument);
   if (audioUrl) URL.revokeObjectURL(audioUrl);
-  audioUrl = URL.createObjectURL(blob);
+  audioUrl = URL.createObjectURL(batch?.blob || blob);
+  player.loop = continuousIOS;
   player.src = audioUrl;
+  states.audio.batch = batch;
   states.audio.piece = piece;
   states.audio.blob = blob;
   states.audio.instrument = instrument;
   $('#audio-meta').textContent = `${piece.bars.length} ${t('measures')}`;
   renderScore(piece);
   recordGeneration('audio', seed);
+  if (batch && batch.segments.length > 1) {
+    states.audio.count += batch.segments.length - 1;
+    paintCount('audio'); persistCount('audio');
+  }
   updateMediaMetadata();
   updatePlaybackControls();
   if (autoplay) player.play().catch(() => { audioChain = false; updatePlaybackControls(); });
@@ -568,6 +612,10 @@ function clampInput(element) {
 function bindRange(type, rangeId, numberId, callback) {
   const range = $(`#${rangeId}`), number = $(`#${numberId}`);
   range.addEventListener('input', () => { number.value = range.value; callback(); });
+  number.addEventListener('input', () => {
+    const value = Number(number.value);
+    if (Number.isInteger(value) && value >= Number(number.min) && value <= Number(number.max)) range.value = number.value;
+  });
   number.addEventListener('change', () => { clampInput(number); range.value = number.value; callback(); });
 }
 function download(blob, extension, seed) {
@@ -662,11 +710,13 @@ for (const type of Object.keys(states)) {
     state.paused = !state.paused;
     updateControls(type);
     if (state.paused) {
+      if (type === 'audio' && IOS_AUDIO) $('#audio-player').loop = false;
       if (type === 'text') { clearTimeout(pausedLengthTimer); pausedLengthTimer = 0; }
       clearInterval(state.timer); paintCount(type); persistCount(type);
     }
     else if (type === 'audio') {
       const player = $('#audio-player');
+      if (IOS_AUDIO) player.loop = audioChain;
       if (audioChain && player.ended) generateAudio(randomSeed(), true);
     } else {
       const callback = type === 'text' ? generateText : generateImage;
@@ -712,11 +762,15 @@ $('#audio-instrument').addEventListener('change', () => {
   const wasPlaying = !player.paused;
   const position = player.currentTime;
   player.pause();
-  const blob = synthesizeWav(state.piece, $('#audio-instrument').value);
+  const instrument = $('#audio-instrument').value;
+  const batch = state.batch ? retimbreBackgroundBatch(state.batch, instrument) : null;
+  const blob = batch ? batch.segments[batch.activeIndex].blob : synthesizeWav(state.piece, instrument);
+  if (batch) batch.lastTime = position;
   const oldUrl = audioUrl;
-  audioUrl = URL.createObjectURL(blob);
+  audioUrl = URL.createObjectURL(batch?.blob || blob);
+  state.batch = batch;
   state.blob = blob;
-  state.instrument = $('#audio-instrument').value;
+  state.instrument = instrument;
   updateMediaMetadata();
   player.addEventListener('loadedmetadata', () => {
     if (Number.isFinite(player.duration) && position > 0) {
@@ -743,10 +797,16 @@ player.addEventListener('play', () => {
   updateMediaMetadata();
   cancelAnimationFrame(highlightFrame);
   updatePlaybackControls();
-  updatePlaybackHighlight();
+  if (!document.hidden) updatePlaybackHighlight();
 });
 player.addEventListener('pause', () => { clearPlaybackHighlight(); updatePlaybackControls(); });
-player.addEventListener('seeked', () => { if (!player.paused) { cancelAnimationFrame(highlightFrame); updatePlaybackHighlight(); } });
+player.addEventListener('seeked', () => {
+  if (states.audio.batch && !document.hidden) syncBackgroundSegment();
+  if (!player.paused && !document.hidden) { cancelAnimationFrame(highlightFrame); updatePlaybackHighlight(); }
+});
+player.addEventListener('timeupdate', () => {
+  if (states.audio.batch && !document.hidden && !syncBackgroundSegment()) updatePlaybackControls();
+});
 player.addEventListener('ended', () => {
   clearPlaybackHighlight();
   updatePlaybackControls();
@@ -759,7 +819,9 @@ $('#audio-play-toggle').addEventListener('click', () => {
   else player.pause();
 });
 $('#audio-seek').addEventListener('change', (event) => {
-  if (Number.isFinite(player.duration)) player.currentTime = player.duration * Number(event.target.value) / 1000;
+  const segment = states.audio.batch?.segments[states.audio.batch.activeIndex];
+  const duration = segment?.duration ?? player.duration;
+  if (Number.isFinite(duration)) player.currentTime = (segment?.start || 0) + duration * Number(event.target.value) / 1000;
   updatePlaybackControls();
 });
 $('#audio-generate').addEventListener('click', () => {
@@ -771,20 +833,38 @@ $('#audio-generate').addEventListener('click', () => {
 $('#text-export').addEventListener('click', () => download(new Blob([states.text.value || ''], { type: 'text/plain;charset=utf-8' }), 'txt', states.text.seed));
 $('#image-export').addEventListener('click', () => $('#image-canvas').toBlob((blob) => { if (blob) download(blob, 'png', states.image.seed); }, 'image/png'));
 $('#audio-export').addEventListener('click', () => { if (states.audio.blob) download(states.audio.blob, 'wav', states.audio.seed); });
+function restoreAudioUI() {
+  // The native media clock, not a background timer or wall-clock estimate, is
+  // authoritative after iOS has suspended page scripts. Never pause the media.
+  cancelAnimationFrame(highlightFrame);
+  highlightFrame = 0;
+  if (states.audio.batch && syncBackgroundSegment()) return; // a fresh batch starts its own loop
+  updatePlaybackControls();
+  if (!player.paused) updatePlaybackHighlight();
+  else clearPlaybackHighlight();
+}
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { clearTimeout(pausedLengthTimer); pausedLengthTimer = 0; }
+  if (document.hidden) {
+    clearTimeout(pausedLengthTimer); pausedLengthTimer = 0;
+    clearPlaybackHighlight();
+  }
   clearInterval(states.text.timer); clearInterval(states.image.timer);
   if (document.hidden && activeType !== 'audio') { paintCount(activeType); persistCount(activeType); }
-  if (!document.hidden && activeType !== 'audio' && !states[activeType].paused) {
-    const callback = activeType === 'text' ? generateText : generateImage;
-    callback(); schedule(activeType, callback);
+  if (!document.hidden) {
+    restoreAudioUI();
+    if (activeType !== 'audio' && !states[activeType].paused) {
+      const callback = activeType === 'text' ? generateText : generateImage;
+      callback(); schedule(activeType, callback);
+    }
   }
+});
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted && !document.hidden) restoreAudioUI();
 });
 window.addEventListener('resize', () => {
   if (states.audio.piece && states.audio.scoreRows) drawSlurArcs(states.audio.piece, states.audio.scoreRows);
 });
 window.addEventListener('pagehide', () => { for (const type of Object.keys(states)) persistCount(type); });
-window.addEventListener('beforeunload', () => { if (audioUrl) URL.revokeObjectURL(audioUrl); });
 // The site remains inert until an explicit adult confirmation. A refusal is
 // intentionally not persisted, so the question reappears on the next visit.
 function enterSite() {
