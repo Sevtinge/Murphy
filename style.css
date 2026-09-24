@@ -255,3 +255,22 @@ body.age-locked #app { visibility: hidden; }
 
 /* Respect line breaks written as \n in JavaScript translation strings. */
 [data-i18n], .status, .pause-btn, .btn[data-i18n] { white-space: pre-line; }
+
+/* iOS standalone web app: viewport-fit=cover plus safe-area padding keeps
+   the header, footer, and age dialog clear of the notch and home indicator. */
+html { background: var(--bg-primary); }
+body, #app { min-height: 100vh; min-height: 100dvh; }
+#app {
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.app-header { padding-top: max(16px, env(safe-area-inset-top, 0px)); }
+.app-footer { padding-bottom: max(32px, env(safe-area-inset-bottom, 0px)); }
+.age-gate {
+  padding: max(20px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px))
+    max(20px, env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
+}
+
+.source-link { margin-bottom: 10px; overflow-wrap: anywhere; }
+.source-link a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.source-link a:hover { text-decoration: underline; }

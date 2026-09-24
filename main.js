@@ -1,8 +1,12 @@
 const themeManager = {
   current: 'auto',
   apply() {
-    document.documentElement.dataset.theme = this.current === 'auto'
+    const theme = this.current === 'auto'
       ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : this.current;
+    document.documentElement.dataset.theme = theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#1c1c1e' : '#f5f5f7');
+    document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
+      ?.setAttribute('content', theme === 'dark' ? 'black-translucent' : 'default');
   },
   init() {
     try { this.current = localStorage.getItem('murphy_theme') || 'auto'; } catch { /* storage unavailable */ }
@@ -28,16 +32,16 @@ const dictionaries = {
     intro: 'Random your wrong.',
     darkEyebrow: "No, it wasn't me. I don't know.", darkHeading: 'Why are you here?',
     darkIntro: 'I remember you.',
-    textTab: 'Text', imageTab: 'Image', audioTab: 'Audio', textEyebrow: '01 / CHARACTERS', textTitle: 'Text',
+    textTab: 'Text', imageTab: 'Image', audioTab: 'Audio', textEyebrow: '01', textTitle: 'Text',
     textDescription: 'Generate random Unicode characters.\nChoose a length from 20 to 4096.\nThey say the monkey at the typewriter eventually just peed on it.', length: 'Text length', lengthHint: '20–4096 characters', darkLengthHint: '1 character · fixed preset',
-    livePreview: 'LIVE PREVIEW', imageEyebrow: '02 / PIXELS', imageTitle: 'Image',
+    livePreview: 'LIVE PREVIEW', imageEyebrow: '02', imageTitle: 'Image',
     imageDescription: 'Fill every pixel with a random color.\nYou might get a landscape, a classic masterpiece, your cat, or even the face of the person in front of the screen.\nMost of the time it just looks like meaningless colored pixels......or does it?', width: 'Width', widthHint: '16–1920 px',
-    height: 'Height', heightHint: '8–1080 px', audioEyebrow: '03 / SOUND', audioTitle: 'Audio',
+    height: 'Height', heightHint: '8–1080 px', audioEyebrow: '03', audioTitle: 'Audio',
     audioDescription: 'Random pitches, beats, BPM, and content.\nIt has the air of a modern-day Beethoven.\nOh, that damned score—even Liszt would be helpless.', bars: 'Measures', barsHint: '4–20 measures', darkBarsHint: '1 measure · fixed preset',
     timeSignature: 'TIME SIGNATURE', tempo: 'TEMPO', instrument: 'INSTRUMENT', piano: 'Piano', scorePreview: 'GENERATED CONTENT',
     pause: 'Pause generation', resume: 'Resume generation', live: 'Generating', paused: 'Paused',
     exportTxt: 'Export .txt', exportPng: 'Export .png', exportWav: 'Export .wav',
-    privacyNote: 'All content is generated locally.', agreement: 'User agreement', privacy: 'Privacy policy',
+    privacyNote: 'All content is generated locally.', sourceCode: 'Source code', agreement: 'User agreement', privacy: 'Privacy policy',
     characters: 'characters', measures: 'measures', beat: 'BPM', theme: 'Toggle theme',
     generated: 'generated',
     seed: 'Seed', seedHint: 'A fixed value corresponding to each generated result', applySeed: 'Recreate', copySeed: 'Copy',
@@ -57,16 +61,16 @@ const dictionaries = {
     intro: '随机属于你的错误。',
     darkEyebrow: '不，不是我，我不知道。', darkHeading: '你为什么会在这里？',
     darkIntro: '我记住你了。',
-    textTab: '文本', imageTab: '图片', audioTab: '音频', textEyebrow: '01 / 字符', textTitle: '文本',
+    textTab: '文本', imageTab: '图片', audioTab: '音频', textEyebrow: '01', textTitle: '文本',
     textDescription: '随机生成 Unicode 字符。\n可自定义长度在 20 至 4096 范围内。\n听说摆弄打字机的那只猴子，最终只是在打字机上尿了一泡。', length: '文本长度', lengthHint: '20–4096 个字符', darkLengthHint: '固定 1 个字符',
-    livePreview: '实时预览', imageEyebrow: '02 / 像素', imageTitle: '图片',
+    livePreview: '实时预览', imageEyebrow: '02', imageTitle: '图片',
     imageDescription: '以随机的颜色填充每一个像素。\n可能会生成风景画、经典名作、你家的猫猫，甚至屏幕前那个人的脸。\n不过大多数时候看起来都是毫无意义的彩点......是吗？', width: '宽度', widthHint: '16–1920 像素',
-    height: '高度', heightHint: '8–1080 像素', audioEyebrow: '03 / 声音', audioTitle: '音频',
+    height: '高度', heightHint: '8–1080 像素', audioEyebrow: '03', audioTitle: '音频',
     audioDescription: '随机音调、节拍、BPM、内容。\n颇有当代贝多芬的风范。\n哦这该死的谱子，李斯特看了也无能为力。', bars: '小节数', barsHint: '4–20 小节', darkBarsHint: '固定 1 小节',
     timeSignature: '拍号', tempo: '速度', instrument: '音色', piano: '钢琴', scorePreview: '生成内容',
     pause: '暂停生成', resume: '继续生成', live: '生成中', paused: '已暂停',
     exportTxt: '导出 .txt', exportPng: '导出 .png', exportWav: '导出 .wav',
-    privacyNote: '所有内容均在本地生成。', agreement: '用户协议', privacy: '隐私政策',
+    privacyNote: '所有内容均在本地生成。', sourceCode: '开源地址', agreement: '用户协议', privacy: '隐私政策',
     characters: '字符', measures: '小节', beat: 'BPM', theme: '切换主题',
     generated: '已生成',
     seed: '种子', seedHint: '每个随机内容对应的固定值', applySeed: '复现', copySeed: '复制',
