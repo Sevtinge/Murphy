@@ -67,3 +67,25 @@ test('32 measures compose and encode as a WAV', async () => {
   const header = new DataView(await wav.arrayBuffer());
   assert.equal(header.getUint32(40, true), wav.size - 44);
 });
+
+
+test('random scores favor longer notes and use tuplets sparingly', () => {
+  let notes = 0, tuplets = 0, shortNotes = 0;
+  const values = new Set();
+  for (let i = 0; i < 100; i++) {
+    const piece = compose(16, seededRandom(`density${i}`, 'audio'));
+    for (const bar of piece.bars) {
+      assert.equal(bar.reduce((sum, note) => sum + note.ticks, 0), piece.barTicks);
+      assert.ok(new Set(bar.filter((note) => note.tuplet).map((note) => note.group)).size <= 1);
+      for (const note of bar) {
+        notes++;
+        if (note.tuplet) tuplets++;
+        if (['eighth', 'sixteenth', 'thirtysecond', 'dottedEighth'].includes(note.value)) shortNotes++;
+        values.add(note.value);
+      }
+    }
+  }
+  assert.ok(tuplets / notes < 0.25, 'tuplet notation should not dominate the score');
+  assert.ok(shortNotes / notes < 0.48, 'underlined notes should be accents, not the default');
+  assert.ok(values.has('thirtysecond') && values.has('sixteenth') && values.has('half'));
+});

@@ -5,25 +5,25 @@ const METERS = [[3, 4], [4, 4], [5, 4], [6, 8], [7, 8]];
 const KEYS = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
 const SCALE = [48, 50, 52, 53, 55, 57, 59, 60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81, 83, 84];
 const TUPLET_SIZES = [3, 5, 6, 7, 9, 10, 11, 12];
+const COMMON_TUPLET_SIZES = [3, 5, 6, 7];
 const THREE_BEAT_TUPLETS = [2, 4, 8];
+const COMMON_THREE_BEAT_TUPLETS = [2, 4];
 const choose = (rng, values) => values[Math.floor(rng() * values.length)];
 const B = TICKS_PER_BEAT;
-const HALF_BEAT = [
-  [[B / 2, 'eighth']],
-  [[B / 4, 'sixteenth'], [B / 4, 'sixteenth']],
-];
+const HALF_BEAT = [[[B / 2, 'eighth']]];
+// Weighted rhythm tiles: plain quarter notes carry the phrase; short notes
+// and tuplets appear occasionally rather than filling most of the score.
 const WHOLE_BEAT = [
-  [[B, 'quarter']], [[B, 'quarter']], [[B, 'quarter']],
-  [[B / 2, 'eighth'], [B / 2, 'eighth']],
+  ...Array.from({ length: 28 }, () => [[B, 'quarter']]),
   [[B / 2, 'eighth'], [B / 2, 'eighth']],
   Array.from({ length: 4 }, () => [B / 4, 'sixteenth']),
   [[B * 3 / 4, 'dottedEighth'], [B / 4, 'sixteenth']],
-  [[B / 4, 'sixteenth'], [B * 3 / 4, 'dottedEighth']],
   [[B / 2, 'eighth'], [B / 4, 'sixteenth'], [B / 4, 'sixteenth']],
 ];
 const TWO_BEATS = [
-  [[2 * B, 'half']], [[2 * B, 'half']],
+  ...Array.from({ length: 4 }, () => [[2 * B, 'half']]),
   [[B * 3 / 2, 'dottedQuarter'], [B / 2, 'eighth']],
+  [[B, 'quarter'], [B, 'quarter']],
   [[B, 'quarter'], [B, 'quarter']],
 ];
 const THREE_BEATS = [[[3 * B, 'dottedHalf']]];
@@ -45,7 +45,9 @@ export function sampleBpm(rng) {
 }
 
 function tupletPattern(rng, beats) {
-  const count = choose(rng, beats === 3 ? THREE_BEAT_TUPLETS : TUPLET_SIZES);
+  const count = beats === 3
+    ? choose(rng, rng() < 0.1 ? THREE_BEAT_TUPLETS : COMMON_THREE_BEAT_TUPLETS)
+    : choose(rng, rng() < 0.15 ? TUPLET_SIZES : COMMON_TUPLET_SIZES);
   if (beats === 3) {
     const base = count === 8 ? 'eighth' : 'quarter';
     return Array.from({ length: count }, () => [3 * B / count, base, count, count === 8 ? 6 : 3]);
@@ -68,14 +70,16 @@ export function compose(barCount, rng) {
     let remaining = barTicks;
     const events = [];
     let group = 0;
+    let tupletUsed = false;
     while (remaining > 0) {
       let pattern;
       if (remaining >= 4 * B && rng() < 0.11) pattern = FOUR_BEATS;
-      else if (remaining >= 3 * B && rng() < 0.13) pattern = rng() < 0.50 ? [tupletPattern(rng, 3)] : THREE_BEATS;
-      else if (remaining >= 2 * B && rng() < 0.23) pattern = rng() < 0.40 ? [tupletPattern(rng, 2)] : TWO_BEATS;
-      else if (remaining >= B) pattern = rng() < 0.38 ? [tupletPattern(rng, 1)] : WHOLE_BEAT;
+      else if (remaining >= 3 * B && rng() < 0.13) pattern = !tupletUsed && rng() < 0.15 ? [tupletPattern(rng, 3)] : THREE_BEATS;
+      else if (remaining >= 2 * B && rng() < 0.23) pattern = !tupletUsed && rng() < 0.12 ? [tupletPattern(rng, 2)] : TWO_BEATS;
+      else if (remaining >= B) pattern = !tupletUsed && rng() < 0.04 ? [tupletPattern(rng, 1)] : WHOLE_BEAT;
       else pattern = HALF_BEAT;
       const tile = choose(rng, pattern);
+      if (tile[0][2]) tupletUsed = true;
       group++;
       for (const [ticks, value, tuplet = null, tupletBase = null] of tile) {
         const midi = rng() < 0.07 ? null : choose(rng, SCALE) + keySemitones;
@@ -220,7 +224,3 @@ export function synthesizeWav(piece, instrument = 'piano', sampleRateOverride = 
   ascii(36, 'data'); view.setUint32(40, sampleCount * 2, true);
   return new Blob([buffer], { type: 'audio/wav' });
 }
-
-
-
-
