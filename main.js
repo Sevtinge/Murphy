@@ -24,6 +24,7 @@ import { randomSeed, seededRandom, VALID_SEED, EASTER_SEED, isDarkSeed } from '.
 import { EASTER_TEXT, EASTER_BITMAP, DARK_CROSS_TEXT, DARK_CROSS_BITMAP, DARK_RED } from './easter.js';
 import { jianpuToken } from './notation.js';
 import { displayLineBreaks } from './text-format.js';
+import { trackMetadata } from './media-info.js';
 
 const $ = (selector) => document.querySelector(selector);
 const dictionaries = {
@@ -143,6 +144,7 @@ function translate() {
   }
   for (const type of Object.keys(states)) validateSeedField(type, false);
   updatePlaybackControls();
+  updateMediaMetadata();
 }
 function updateControls(type) {
   const state = states[type];
@@ -396,6 +398,23 @@ function updatePlaybackControls() {
   $('#audio-seek').value = duration > 0 ? String(Math.round(player.currentTime / duration * 1000)) : '0';
   $('#audio-time').textContent = `${clock(player.currentTime)} / ${clock(duration)}`;
 }
+function updateMediaMetadata() {
+  const state = states.audio;
+  if (!state.piece || !state.seed || !('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
+  const instrumentName = dictionaries[language][state.instrument] || state.instrument;
+  // The two PNG sizes let the OS choose a suitable lock-screen artwork.
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata(trackMetadata({
+      measures: state.piece.bars.length,
+      instrument: instrumentName,
+      seed: state.seed,
+      eggKind: state.eggKind,
+      baseUrl: document.baseURI,
+    }));
+  } catch (error) {
+    console.warn('Media Session metadata unavailable:', error);
+  }
+}
 function clearPlaybackHighlight() {
   cancelAnimationFrame(highlightFrame);
   highlightFrame = 0;
@@ -537,6 +556,7 @@ function generateAudio(seed = randomSeed(), autoplay = false) {
   $('#audio-meta').textContent = `${piece.bars.length} ${t('measures')}`;
   renderScore(piece);
   recordGeneration('audio', seed);
+  updateMediaMetadata();
   updatePlaybackControls();
   if (autoplay) player.play().catch(() => { audioChain = false; updatePlaybackControls(); });
 }
@@ -611,6 +631,9 @@ for (const type of Object.keys(states)) {
         ? { text: renderDarkText, image: renderDarkImage, audio: generateAudio }
         : { text: renderEasterText, image: renderEasterImage, audio: generateAudio };
       renderers[type](seed);
+      if (eggKind === 'dark') {
+        try { localStorage.setItem('666', 'true'); } catch { /* storage unavailable */ }
+      }
     } else {
       ({ text: generateText, image: generateImage, audio: generateAudio })[type](seed);
     }
@@ -694,6 +717,7 @@ $('#audio-instrument').addEventListener('change', () => {
   audioUrl = URL.createObjectURL(blob);
   state.blob = blob;
   state.instrument = $('#audio-instrument').value;
+  updateMediaMetadata();
   player.addEventListener('loadedmetadata', () => {
     if (Number.isFinite(player.duration) && position > 0) {
       player.currentTime = Math.min(position, Math.max(0, player.duration - .01));
@@ -716,6 +740,7 @@ for (const id of ['image-width', 'image-height']) {
 const player = $('#audio-player');
 player.addEventListener('play', () => {
   if (!states.audio.paused) audioChain = true;
+  updateMediaMetadata();
   cancelAnimationFrame(highlightFrame);
   updatePlaybackControls();
   updatePlaybackHighlight();
