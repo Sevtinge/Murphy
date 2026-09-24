@@ -1,4 +1,4 @@
-import { compose, synthesizeWav, TICKS_PER_BEAT } from './audio.js';
+import { compose, synthesizeWav, TICKS_PER_BEAT } from './music.js';
 import { randomSeed, seededRandom } from './seed.js';
 
 const BATCH_RATE = 16000;
@@ -18,7 +18,7 @@ export function pieceDuration(piece) {
 // Blob slices without decoding or copying every sample on the main thread.
 export function concatenateWav(blobs, sampleRate = BATCH_RATE) {
   const dataBytes = blobs.reduce((size, blob) => size + blob.size - 44, 0);
-  if (dataBytes > 0xffffffff - 36) throw new RangeError('Background audio batch exceeds WAV size limit');
+  if (dataBytes > 0xffffffff - 36) throw new RangeError('Background music batch exceeds WAV size limit');
   const header = new ArrayBuffer(44);
   const view = new DataView(header);
   const ascii = (offset, text) => { for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i)); };
@@ -58,7 +58,7 @@ export function buildBackgroundBatch(firstPiece, firstSeed, barCount, instrument
   let duration = pieceDuration(firstPiece);
   for (let attempts = 0; duration < targetSeconds && pieces.length < maxSegments && attempts < maxSegments * 4; attempts++) {
     const seed = seedFactory();
-    const piece = compose(barCount, seededRandom(seed, 'audio'));
+    const piece = compose(barCount, seededRandom(seed, 'music'));
     const candidate = pieceDuration(piece);
     if (candidate > 120) continue;
     pieces.push({ piece, seed });

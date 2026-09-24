@@ -38,7 +38,7 @@
       <div class="tabs" role="tablist" aria-label="Generators" id="tabs">
         <button class="tab active" type="button" id="tab-text" role="tab" aria-controls="panel-text" aria-selected="true" data-tab="text"><span class="tab-icon">Aa</span><span data-i18n="textTab">Text</span></button>
         <button class="tab" type="button" id="tab-image" role="tab" aria-controls="panel-image" aria-selected="false" tabindex="-1" data-tab="image"><span class="tab-icon">▦</span><span data-i18n="imageTab">Image</span></button>
-        <button class="tab" type="button" id="tab-audio" role="tab" aria-controls="panel-audio" aria-selected="false" tabindex="-1" data-tab="audio"><span class="tab-icon">♫</span><span data-i18n="audioTab">Audio</span></button>
+        <button class="tab" type="button" id="tab-music" role="tab" aria-controls="panel-music" aria-selected="false" tabindex="-1" data-tab="music"><span class="tab-icon">♫</span><span data-i18n="musicTab">Music</span></button>
       </div>
 
       <section class="generator-panel" id="panel-text" role="tabpanel" aria-labelledby="tab-text">
@@ -63,13 +63,13 @@ Most of the time it just looks like meaningless colored pixels......or does it?<
         <div class="panel-actions"><button class="btn btn-secondary pause-btn" id="image-pause" type="button"></button><button class="btn btn-primary" id="image-export" type="button" data-i18n="exportPng">Export .png</button></div>
       </section>
 
-      <section class="generator-panel" id="panel-audio" role="tabpanel" aria-labelledby="tab-audio" hidden>
-        <div class="panel-heading"><div><p class="eyebrow" data-i18n="audioEyebrow">03</p><h3 data-i18n="audioTitle">Audio</h3><p data-i18n="audioDescription">Random pitches, beats, BPM, and content.
+      <section class="generator-panel" id="panel-music" role="tabpanel" aria-labelledby="tab-music" hidden>
+        <div class="panel-heading"><div><p class="eyebrow" data-i18n="musicEyebrow">03</p><h3 data-i18n="musicTitle">Music</h3><p data-i18n="musicDescription">Random pitches, beats, BPM, and content.
 It has the air of a modern-day Beethoven.
-Oh, that damned score—even Liszt would be helpless.</p></div><div class="panel-stats"><span class="generation-count" id="audio-count"></span><span class="status" id="audio-status" aria-live="polite"></span></div></div>
-        <div class="seed-row"><label class="seed-label" for="audio-seed-input"><span data-i18n="seed">Seed</span><small data-i18n="seedHint">A fixed value corresponding to each generated result</small></label><div class="seed-controls"><input id="audio-seed-input" class="form-input seed-input" type="text" autocomplete="off" spellcheck="false" placeholder="Enter a seed" /><button class="btn btn-secondary" id="audio-apply-seed" type="button" data-i18n="applySeed">Recreate</button><button class="btn btn-secondary copy-seed" id="audio-copy-seed" type="button" data-i18n="copySeed" disabled>Copy</button></div><p class="seed-error" id="audio-seed-error" role="alert" hidden></p></div>
-        <div class="settings-row"><label class="field" for="audio-bars"><span data-i18n="bars">Measures</span><span class="field-hint" id="audio-bars-hint" data-i18n="barsHint">4–32 measures</span></label><div class="length-control"><input id="audio-bars" type="range" min="4" max="32" step="1" value="8" /><input id="audio-bars-number" class="form-input numeric-input" type="number" min="4" max="32" step="1" value="8" aria-label="Measures" /></div></div>
-        <div class="settings-row timbre-settings"><label class="field" for="audio-instrument"><span data-i18n="instrument">Instrument</span></label><select id="audio-instrument" class="form-select" aria-label="Instrument">
+Oh, that damned score—even Liszt would be helpless.</p></div><div class="panel-stats"><span class="generation-count" id="music-count"></span><span class="status" id="music-status" aria-live="polite"></span></div></div>
+        <div class="seed-row"><label class="seed-label" for="music-seed-input"><span data-i18n="seed">Seed</span><small data-i18n="seedHint">A fixed value corresponding to each generated result</small></label><div class="seed-controls"><input id="music-seed-input" class="form-input seed-input" type="text" autocomplete="off" spellcheck="false" placeholder="Enter a seed" /><button class="btn btn-secondary" id="music-apply-seed" type="button" data-i18n="applySeed">Recreate</button><button class="btn btn-secondary copy-seed" id="music-copy-seed" type="button" data-i18n="copySeed" disabled>Copy</button></div><p class="seed-error" id="music-seed-error" role="alert" hidden></p></div>
+        <div class="settings-row"><label class="field" for="music-bars"><span data-i18n="bars">Measures</span><span class="field-hint" id="music-bars-hint" data-i18n="barsHint">4–32 measures</span></label><div class="length-control"><input id="music-bars" type="range" min="4" max="32" step="1" value="8" /><input id="music-bars-number" class="form-input numeric-input" type="number" min="4" max="32" step="1" value="8" aria-label="Measures" /></div></div>
+        <div class="settings-row timbre-settings"><label class="field" for="music-instrument"><span data-i18n="instrument">Instrument</span></label><select id="music-instrument" class="form-select" aria-label="Instrument">
           <optgroup label="Keys" data-i18n-label="keysGroup">
             <option value="piano" data-i18n="piano">Piano</option>
             <option value="electric" data-i18n="electric">Electric piano</option>
@@ -96,11 +96,11 @@ Oh, that damned score—even Liszt would be helpless.</p></div><div class="panel
             <option value="synthLead" data-i18n="synthLead">Synth lead</option>
           </optgroup>
         </select></div>
-        <div class="preview-label"><span data-i18n="scorePreview">GENERATED CONTENT</span><span id="audio-meta">—</span></div>
-        <div class="score-shell"><div class="score-heading" id="audio-score-heading" hidden></div><div class="score-preview" id="audio-score" aria-label="Numbered musical notation"><p class="empty-score" data-i18n="emptyScore">Generate audio to see its notation.</p></div></div>
-        <audio id="audio-player" preload="none"></audio>
-        <div class="audio-playback" id="audio-playback" hidden><button class="btn btn-secondary" id="audio-play-toggle" type="button" data-i18n="playCurrent">Play current</button><input id="audio-seek" type="range" min="0" max="1000" value="0" aria-label="Seek" /><span id="audio-time">0:00 / 0:00</span></div>
-        <div class="panel-actions"><button class="btn btn-secondary pause-btn" id="audio-pause" type="button" disabled></button><button class="btn btn-primary" id="audio-generate" type="button" data-i18n="generateAudio">Generate &amp; play</button><button class="btn btn-secondary" id="audio-export" type="button" data-i18n="exportWav" disabled>Export .wav</button></div>
+        <div class="preview-label"><span data-i18n="scorePreview">GENERATED CONTENT</span><span id="music-meta">—</span></div>
+        <div class="score-shell"><div class="score-heading" id="music-score-heading" hidden></div><div class="score-preview" id="music-score" aria-label="Numbered musical notation"><p class="empty-score" data-i18n="emptyScore">Generate music to see its notation.</p></div></div>
+        <audio id="music-player" preload="none"></audio>
+        <div class="music-playback" id="music-playback" hidden><button class="btn btn-secondary" id="music-play-toggle" type="button" data-i18n="playCurrent">Play current</button><input id="music-seek" type="range" min="0" max="1000" value="0" aria-label="Seek" /><span id="music-time">0:00 / 0:00</span></div>
+        <div class="panel-actions"><button class="btn btn-secondary pause-btn" id="music-pause" type="button" disabled></button><button class="btn btn-primary" id="music-generate" type="button" data-i18n="generateMusic">Generate &amp; play</button><button class="btn btn-secondary" id="music-export" type="button" data-i18n="exportWav" disabled>Export .wav</button></div>
       </section>
       <p class="privacy-note" data-i18n="privacyNote">All content is generated locally.</p>
     </main>

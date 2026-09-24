@@ -88,7 +88,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
 .bar-number { color: var(--text-tertiary); font-size: .7rem; font-weight: 750; min-width: 25px; }
 .note-chip { padding: 4px 7px; border-radius: 5px; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font-size: .7rem; font-family: ui-monospace, Consolas, monospace; font-weight: 600; white-space: nowrap; }
 .note-chip.rest { background: var(--bg-tertiary); color: var(--text-secondary); }
-#audio-player { display: block; width: 100%; margin-top: 20px; height: 42px; }
+#music-player { display: block; width: 100%; margin-top: 20px; height: 42px; }
 .privacy-note { text-align: center; font-size: .76rem; color: var(--text-tertiary); padding-top: 21px; }
 @media (max-width: 600px) {
   .intro { align-items: flex-start; flex-direction: column; gap: 15px; margin-bottom: 22px; }
@@ -164,7 +164,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
 /* Whole measures are atomic flex items: wrap only when the next measure
    cannot fit, never at a fixed number of measures per row. */
 .score-flow { display: flex; flex-wrap: wrap; align-items: baseline; align-content: start; column-gap: 0; row-gap: 19px; width: 100%; color: var(--text-primary); font: 27px/1.85 'Nuduseng Jianpu', var(--font-sans); }
-.score-flow .score-measure { display: inline-flex; flex: 0 0 auto; align-items: baseline; gap: .28em; position: relative; min-width: max-content; padding: 19px 0 6px .12em; border: 0; white-space: nowrap; }
+.score-flow .score-measure { display: inline-flex; flex: 0 0 auto; align-items: baseline; gap: 0; position: relative; min-width: max-content; padding: 19px 0 6px .12em; border: 0; white-space: nowrap; }
 .score-flow .jianpu-note { display: inline; min-width: 0; padding: 0; white-space: pre; }
 .score-flow .score-barline { margin: 0 .42em 0 .08em; }
 .score-flow .jianpu-note.is-playing { color: var(--accent); background: color-mix(in srgb, var(--accent) 23%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); border-radius: 3px; }
@@ -172,21 +172,38 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
 .timbre-settings { border-top: 1px solid var(--border-light); padding-top: 17px; }
 .timbre-settings .form-select { width: min(250px, 58%); }
 @media (max-width: 600px) { .timbre-settings { flex-direction: row; align-items: center; } .timbre-settings .form-select { width: min(205px, 68%); } }
-#audio-player { display: none; }
-.audio-playback { display: flex; align-items: center; gap: 11px; margin-top: 20px; padding: 10px 12px; background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: var(--radius-sm); }
-.audio-playback .btn { flex-shrink: 0; white-space: nowrap; }
-.audio-playback input[type="range"] { flex: 1; min-width: 35px; }
-#audio-time { color: var(--text-secondary); font-size: .74rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
-@media (max-width: 600px) { .audio-playback { flex-wrap: wrap; } .audio-playback .btn { width: 100%; justify-content: center; } }
+#music-player { display: none; }
+.music-playback { display: flex; align-items: center; gap: 11px; margin-top: 20px; padding: 10px 12px; background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: var(--radius-sm); }
+.music-playback .btn { flex-shrink: 0; white-space: nowrap; }
+.music-playback input[type="range"] { flex: 1; min-width: 35px; }
+#music-time { color: var(--text-secondary); font-size: .74rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 600px) { .music-playback { flex-wrap: wrap; } .music-playback .btn { width: 100%; justify-content: center; } }
 .score-shell { background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: var(--radius-md); overflow: hidden; }
 .score-shell .score-heading { padding: 12px 16px; border-bottom: 1px solid var(--border-light); color: var(--accent); background: var(--bg-primary); font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .score-shell .score-preview { border: 0; border-radius: 0; max-height: 420px; overflow: auto; }
-/* Legato slurs are curved lines spanning real note positions, independent of
-   the straight numbered tuplet brackets. */
+/* Font-authored notation glyphs, rather than CSS-drawn brackets and SVG arcs. */
 .score-flow .score-measure { padding-top: 31px; }
-.score-flow { row-gap: 22px; }
-.score-slur-layer { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.score-slur-path { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; }
+.score-flow { row-gap: 22px; position: relative; }
+.score-flow .jianpu-group.is-tuplet { border: 0; padding-top: 0; margin-top: 0; }
+.score-flow .jianpu-group.is-tuplet::before,
+.score-flow .jianpu-group.is-tuplet::after { content: none; }
+.score-flow .tuplet-label { top: -1.38em; z-index: 1; color: var(--text-primary); }
+.jianpu-slur { color: var(--text-primary); font: inherit; }
+.jianpu-flat-bridge {
+  position: absolute; pointer-events: none; white-space: pre;
+  color: var(--text-primary); font: inherit; overflow: hidden; height: 2em;
+}
+.jianpu-flat-segment { position: absolute; top: 0; white-space: pre; }
+.jianpu-tuplet-bracket {
+  position: absolute; top: -1.3em; left: 0; right: 0;
+  height: calc(100% + 1.3em); overflow: hidden;
+  color: var(--text-primary); pointer-events: none;
+}
+.jianpu-tuplet-bracket .bracket-left,
+.jianpu-tuplet-bracket .bracket-right { position: absolute; top: 1.3em; font: inherit; }
+.jianpu-tuplet-bracket .bracket-left { left: .5em; }
+.jianpu-tuplet-bracket .bracket-right { right: .5em; }
+.jianpu-extension { display: inline-block; margin: 0 .15em; }
 /* Seed belongs directly below the panel introduction, before any settings. */
 .generator-panel > .seed-row { border-top: 0; border-bottom: 1px solid var(--border-light); padding: 16px 0; }
 .generator-panel > .seed-row + .settings-row { padding-top: 19px; }

@@ -18,8 +18,10 @@ export function randomSeed() {
 }
 
 export function seededRandom(seed, type) {
-  const bytes = new TextEncoder().encode(`${type}:${seed}`);
-  let state = 2166136261;
+  // Preserve existing music seed results after the generator's namespace rename.
+  const music = type === 'music';
+  const bytes = new TextEncoder().encode(music ? seed : `${type}:${seed}`);
+  let state = music ? 3691887513 : 2166136261;
   for (const byte of bytes) {
     state = Math.imul(state ^ byte, 16777619);
   }

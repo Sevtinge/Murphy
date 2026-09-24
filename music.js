@@ -1,4 +1,4 @@
-// All composition, synthesis and WAV encoding take place locally in the browser.
+// All music composition, synthesis and WAV encoding take place locally in the browser.
 // 55,440 is divisible by every supported tuplet size (2-12).
 export const TICKS_PER_BEAT = 55440;
 const METERS = [[3, 4], [4, 4], [5, 4], [6, 8], [7, 8]];
@@ -66,6 +66,10 @@ export function compose(barCount, rng) {
   const bpm = sampleBpm(rng);
   const barTicks = numerator * B * 4 / denominator;
   const bars = [];
+  const slurs = [];
+  const canSlur = (note) => note?.midi !== null && note?.midi !== undefined &&
+    !['half', 'dottedHalf', 'whole'].includes(note.value) &&
+    !note.value.startsWith('dotted') && !note.tuplet;
   for (let b = 0; b < barCount; b++) {
     let remaining = barTicks;
     const events = [];
@@ -88,25 +92,34 @@ export function compose(barCount, rng) {
       remaining -= tile.reduce((sum, [ticks]) => sum + ticks, 0);
     }
     bars.push(events);
-  }
-  // Curved legato slurs are separate from the numbered tuplet brackets.
-  const slurs = [];
-  for (let barIndex = 0; barIndex < bars.length; barIndex++) {
-    const bar = bars[barIndex];
-    const starts = [];
-    for (let i = 0; i < bar.length - 1; i++) {
-      if (bar[i].midi !== null && bar[i + 1].midi !== null) starts.push(i);
+
+    // Decide the phrasing when its notes are composed, not in a later pass
+    // over all measures. Extending a score keeps the existing prefix intact.
+    const candidates = [];
+    for (let start = 0; start < events.length - 1; start++) {
+      if (!canSlur(events[start])) continue;
+      for (let end = start + 1; end < Math.min(events.length, start + 4); end++) {
+        if (!canSlur(events[end])) break;
+        candidates.push({ startBar: b, start, endBar: b, end });
+      }
     }
-    if (!starts.length || (barIndex !== 0 && rng() >= 0.7)) continue;
-    const start = choose(rng, starts);
-    let end = start + 1;
-    while (end + 1 < bar.length && bar[end + 1].midi !== null && end - start < 4 && rng() < 0.62) end++;
-    slurs.push({ bar: barIndex, start, end });
-  }
-  if (!slurs.length) {
-    for (let b = 0; b < bars.length && !slurs.length; b++) {
-      const i = bars[b].findIndex((note, at) => at + 1 < bars[b].length && note.midi !== null && bars[b][at + 1].midi !== null);
-      if (i >= 0) slurs.push({ bar: b, start: i, end: i + 1 });
+    if (b > 0) {
+      const previous = bars[b - 1];
+      for (let back = 1; back <= Math.min(2, previous.length); back++) {
+        const start = previous.length - back;
+        if (!previous.slice(start).every(canSlur)) break;
+        for (let count = 1; count <= Math.min(2, events.length); count++) {
+          if (!events.slice(0, count).every(canSlur)) break;
+          candidates.push({ startBar: b - 1, start, endBar: b, end: count - 1 });
+        }
+      }
+    }
+    if (candidates.length && (b === 0 || rng() < 0.5)) {
+      const available = candidates.filter((span) => !slurs.some((prior) =>
+        span.startBar <= prior.endBar && span.endBar >= prior.startBar &&
+        (span.startBar !== prior.endBar || span.start <= prior.end) &&
+        (span.endBar !== prior.startBar || span.end >= prior.start)));
+      if (available.length) slurs.push(choose(rng, available));
     }
   }
   return { bars, bpm, numerator, denominator, barTicks, key, slurs };
@@ -128,7 +141,9 @@ export function composeCelebration() {
   return {
     bars, bpm: 120, numerator: 4, denominator: 4,
     barTicks: 4 * TICKS_PER_BEAT, key: { name: 'C', semitones: 0 },
-    slurs: [{ bar: 0, start: 0, end: 1 }, { bar: 2, start: 0, end: 1 }, { bar: 3, start: 0, end: 1 }],
+    slurs: [{ startBar: 0, start: 0, endBar: 0, end: 1 },
+      { startBar: 2, start: 0, endBar: 2, end: 1 },
+      { startBar: 3, start: 0, endBar: 3, end: 1 }],
   };
 }
 
@@ -172,12 +187,24 @@ export function synthesizeWav(piece, instrument = 'piano', sampleRateOverride = 
   const sampleCount = Math.ceil(piece.bars.length * piece.barTicks * samplesPerTick);
   const buffer = new ArrayBuffer(44 + sampleCount * 2);
   const view = new DataView(buffer);
+  const offsets = [];
+  let totalNotes = 0;
+  for (const bar of piece.bars) { offsets.push(totalNotes); totalNotes += bar.length; }
+  const notes = piece.bars.flat();
+  const links = new Set();
+  for (const slur of piece.slurs || []) {
+    const start = offsets[slur.startBar] + slur.start;
+    const end = offsets[slur.endBar] + slur.end;
+    if (!Number.isInteger(start) || !Number.isInteger(end)) continue;
+    for (let i = start; i < end; i++) links.add(i);
+  }
   let elapsedTicks = 0;
+  let globalIndex = 0;
   for (let barIndex = 0; barIndex < piece.bars.length; barIndex++) {
     const bar = piece.bars[barIndex];
-    const slur = piece.slurs?.find((item) => item.bar === barIndex);
     for (let noteIndex = 0; noteIndex < bar.length; noteIndex++) {
       const note = bar[noteIndex];
+      const noteIndexInScore = globalIndex++;
       const start = Math.round(elapsedTicks * samplesPerTick);
       elapsedTicks += note.ticks;
       const end = Math.min(sampleCount, Math.round(elapsedTicks * samplesPerTick));
@@ -188,15 +215,23 @@ export function synthesizeWav(piece, instrument = 'piano', sampleRateOverride = 
       const delta = 2 * Math.PI * frequency / sampleRate;
       const duration = (end - start) / sampleRate;
       const sounding = piece.sustainAll ? duration : Math.min(duration, preset.decay < .5 ? 6 : 4);
-      const connected = slur && noteIndex >= slur.start && noteIndex < slur.end;
-      const overlap = connected ? Math.min(Math.round(sampleRate * 0.025), Math.round((end - start) * 0.12)) : 0;
+      const outgoing = links.has(noteIndexInScore);
+      const incoming = links.has(noteIndexInScore - 1);
+      const nextSamples = notes[noteIndexInScore + 1]?.ticks * samplesPerTick || 0;
+      const overlap = outgoing ? Math.max(1, Math.round(Math.min(
+        sampleRate * 0.09, (end - start) * 0.3, nextSamples * 0.3,
+      ))) : 0;
       const soundEnd = Math.min(sampleCount, end + overlap, start + Math.ceil(sounding * sampleRate) + overlap);
       const renderedSamples = soundEnd - start;
-      const attackSamples = Math.max(1, Math.round(Math.min(preset.attack, duration * 0.2) * sampleRate));
-      const releaseSamples = Math.max(1, Math.round(Math.min(0.045, renderedSamples / sampleRate * 0.25) * sampleRate));
-      const decayStep = piece.sustainAll ? 1 : Math.exp(-preset.decay / (sampleRate * Math.max(0.35, sounding)));
-      const incoming = slur && noteIndex > slur.start && noteIndex <= slur.end;
-      const readUntil = start + Math.round(sampleRate * 0.025);
+      const attackSamples = Math.max(1, Math.round(Math.min(
+        incoming ? Math.min(preset.attack, 0.012) : preset.attack, duration * 0.2,
+      ) * sampleRate));
+      const releaseSamples = outgoing ? overlap : Math.max(1, Math.round(
+        Math.min(0.045, renderedSamples / sampleRate * 0.25) * sampleRate,
+      ));
+      const decayStep = piece.sustainAll ? 1 : Math.exp(
+        -preset.decay * (incoming || outgoing ? 0.5 : 1) / (sampleRate * Math.max(0.35, sounding)),
+      );
       let decay = 1, phase = 0;
       let vibratoPhase = 0;
       const vibratoStep = 2 * Math.PI * 5.2 / sampleRate;
@@ -206,7 +241,7 @@ export function synthesizeWav(piece, instrument = 'piano', sampleRateOverride = 
         let wave = 0;
         for (const [harmonic, level] of preset.partials) wave += level * Math.sin(phase * harmonic);
         const at = 44 + i * 2;
-        const prior = incoming && i < readUntil ? view.getInt16(at, true) / 32767 : 0;
+        const prior = view.getInt16(at, true) / 32767;
         const combined = preset.volume * envelope * wave + prior;
         view.setInt16(at, Math.round(Math.max(-1, Math.min(1, combined)) * 32767), true);
         phase += delta * (preset.vibrato ? 1 + preset.vibrato * Math.sin(vibratoPhase) : 1);

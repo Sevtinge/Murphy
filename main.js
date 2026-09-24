@@ -19,13 +19,15 @@ const themeManager = {
     this.apply();
   },
 };
-import { compose, composeCelebration, composeDark, synthesizeWav, TICKS_PER_BEAT } from './audio.js';
+import { compose, composeCelebration, composeDark, synthesizeWav, TICKS_PER_BEAT } from './music.js';
 import { randomSeed, seededRandom, VALID_SEED, EASTER_SEED, isDarkSeed } from './seed.js';
 import { EASTER_TEXT, EASTER_BITMAP, DARK_CROSS_TEXT, DARK_CROSS_BITMAP, DARK_RED } from './easter.js';
-import { jianpuToken } from './notation.js';
+import { jianpuToken, scoreSlurMarks, scoreSlurPlan, jianpuFlatLineSegments } from './notation.js';
 import { displayLineBreaks } from './text-format.js';
+import { TAB_PATHS, routeType, tabUrl } from './routes.js';
+import { exportFilename } from './export-name.js';
 import { trackMetadata } from './media-info.js';
-import { buildBackgroundBatch, retimbreBackgroundBatch, segmentAtTime, pieceDuration, isIOSBrowser } from './background-audio.js';
+import { buildBackgroundBatch, retimbreBackgroundBatch, segmentAtTime, pieceDuration, isIOSBrowser } from './background-music.js';
 
 const $ = (selector) => document.querySelector(selector);
 const dictionaries = {
@@ -34,12 +36,12 @@ const dictionaries = {
     intro: 'Random your wrong.',
     darkEyebrow: "No, it wasn't me. I don't know.", darkHeading: 'Why are you here?',
     darkIntro: 'I remember you.',
-    textTab: 'Text', imageTab: 'Image', audioTab: 'Audio', textEyebrow: '01', textTitle: 'Text',
+    textTab: 'Text', imageTab: 'Image', musicTab: 'Music', textEyebrow: '01', textTitle: 'Text',
     textDescription: 'Generate random Unicode characters.\nChoose a length from 20 to 4096.\nThey say the monkey at the typewriter eventually just peed on it.', length: 'Text length', lengthHint: '20–4096 characters', darkLengthHint: '1 character · fixed preset',
     livePreview: 'LIVE PREVIEW', imageEyebrow: '02', imageTitle: 'Image',
     imageDescription: 'Fill every pixel with a random color.\nYou might get a landscape, a classic masterpiece, your cat, or even the face of the person in front of the screen.\nMost of the time it just looks like meaningless colored pixels......or does it?', width: 'Width', widthHint: '16–1920 px',
-    height: 'Height', heightHint: '8–1080 px', audioEyebrow: '03', audioTitle: 'Audio',
-    audioDescription: 'Random pitches, beats, BPM, and content.\nIt has the air of a modern-day Beethoven.\nOh, that damned score—even Liszt would be helpless.', bars: 'Measures', barsHint: '4–32 measures', darkBarsHint: '1 measure · fixed preset',
+    height: 'Height', heightHint: '8–1080 px', musicEyebrow: '03', musicTitle: 'Music',
+    musicDescription: 'Random pitches, beats, BPM, and content.\nIt has the air of a modern-day Beethoven.\nOh, that damned score—even Liszt would be helpless.', bars: 'Measures', barsHint: '4–32 measures', darkBarsHint: '1 measure · fixed preset',
     timeSignature: 'TIME SIGNATURE', tempo: 'TEMPO', instrument: 'INSTRUMENT', piano: 'Piano', scorePreview: 'GENERATED CONTENT',
     pause: 'Pause generation', resume: 'Resume generation', live: 'Generating', paused: 'Paused',
     exportTxt: 'Export .txt', exportPng: 'Export .png', exportWav: 'Export .wav',
@@ -47,10 +49,10 @@ const dictionaries = {
     characters: 'characters', measures: 'measures', beat: 'BPM', theme: 'Toggle theme',
     generated: 'generated',
     seed: 'Seed', seedHint: 'A fixed value corresponding to each generated result', applySeed: 'Recreate', copySeed: 'Copy',
-    notGenerated: 'Not generated', generateAudio: 'Generate & play', generateNext: 'Generate next & play',
-    emptyScore: 'Generate audio to see its notation.', seedPlaceholder: 'Enter a seed',
+    notGenerated: 'Not generated', generateMusic: 'Generate & play', generateNext: 'Generate next & play',
+    emptyScore: 'Generate music to see its notation.', seedPlaceholder: 'Enter a seed',
     electric: 'Electric piano', musicBox: 'Music box', pluck: 'Plucked strings', marimba: 'Marimba', organ: 'Organ',
-    playCurrent: 'Play current', pauseCurrent: 'Pause', seek: 'Seek audio',
+    playCurrent: 'Play current', pauseCurrent: 'Pause', seek: 'Seek music',
     keysGroup: 'Keys', stringsGroup: 'Strings', windsGroup: 'Winds & brass', bellsGroup: 'Bells & synth',
     acousticGuitar: 'Acoustic guitar', harp: 'Harp', bass: 'Bass guitar', violin: 'Violin', cello: 'Cello',
     flute: 'Flute', clarinet: 'Clarinet', saxophone: 'Saxophone', trumpet: 'Trumpet', bell: 'Bell', synthLead: 'Synth lead',
@@ -63,12 +65,12 @@ const dictionaries = {
     intro: '随机属于你的错误。',
     darkEyebrow: '不，不是我，我不知道。', darkHeading: '你为什么会在这里？',
     darkIntro: '我记住你了。',
-    textTab: '文本', imageTab: '图片', audioTab: '音频', textEyebrow: '01', textTitle: '文本',
+    textTab: '文本', imageTab: '图片', musicTab: '音乐', textEyebrow: '01', textTitle: '文本',
     textDescription: '随机生成 Unicode 字符。\n可自定义长度在 20 至 4096 范围内。\n听说摆弄打字机的那只猴子，最终只是在打字机上尿了一泡。', length: '文本长度', lengthHint: '20–4096 个字符', darkLengthHint: '固定 1 个字符',
     livePreview: '实时预览', imageEyebrow: '02', imageTitle: '图片',
     imageDescription: '以随机的颜色填充每一个像素。\n可能会生成风景画、经典名作、你家的猫猫，甚至屏幕前那个人的脸。\n不过大多数时候看起来都是毫无意义的彩点......是吗？', width: '宽度', widthHint: '16–1920 像素',
-    height: '高度', heightHint: '8–1080 像素', audioEyebrow: '03', audioTitle: '音频',
-    audioDescription: '随机音调、节拍、BPM、内容。\n颇有当代贝多芬的风范。\n哦这该死的谱子，李斯特看了也无能为力。', bars: '小节数', barsHint: '4–32 小节', darkBarsHint: '固定 1 小节',
+    height: '高度', heightHint: '8–1080 像素', musicEyebrow: '03', musicTitle: '音乐',
+    musicDescription: '随机音调、节拍、BPM、内容。\n颇有当代贝多芬的风范。\n哦这该死的谱子，李斯特看了也无能为力。', bars: '小节数', barsHint: '4–32 小节', darkBarsHint: '固定 1 小节',
     timeSignature: '拍号', tempo: '速度', instrument: '音色', piano: '钢琴', scorePreview: '生成内容',
     pause: '暂停生成', resume: '继续生成', live: '生成中', paused: '已暂停',
     exportTxt: '导出 .txt', exportPng: '导出 .png', exportWav: '导出 .wav',
@@ -76,7 +78,7 @@ const dictionaries = {
     characters: '字符', measures: '小节', beat: 'BPM', theme: '切换主题',
     generated: '已生成',
     seed: '种子', seedHint: '每个随机内容对应的固定值', applySeed: '复现', copySeed: '复制',
-    notGenerated: '未生成', generateAudio: '生成并播放', generateNext: '生成下一段并播放',
+    notGenerated: '未生成', generateMusic: '生成并播放', generateNext: '生成下一段并播放',
     emptyScore: '生成音频后显示简谱。', seedPlaceholder: '输入种子',
     electric: '电钢琴', musicBox: '八音盒', pluck: '拨弦', marimba: '马林巴', organ: '管风琴',
     playCurrent: '播放当前音频', pauseCurrent: '暂停播放', seek: '音频进度',
@@ -91,16 +93,38 @@ const dictionaries = {
 let language = /^zh(?:-|$)/i.test(navigator.languages?.[0] || navigator.language || '') ? 'zh' : 'en';
 // Translation strings may contain \n to make visible line breaks.
 const t = (key) => displayLineBreaks(dictionaries[language][key]);
-const states = Object.fromEntries(['text', 'image', 'audio'].map((type) => {
+const states = Object.fromEntries(['text', 'image', 'music'].map((type) => {
   let count = 0;
-  try { count = Math.max(0, Number(localStorage.getItem(`murphy_count_${type}`)) || 0); } catch { /* storage unavailable */ }
+  try {
+    const key = `murphy_count_${type}`;
+    let saved = localStorage.getItem(key);
+    if (type === 'music' && saved === null) {
+      // One-time migration frees the old count key for a future distinct page.
+      const legacyKey = 'murphy_count_audio';
+      saved = localStorage.getItem(legacyKey);
+      if (saved !== null) {
+        localStorage.setItem(key, saved);
+        localStorage.removeItem(legacyKey);
+      }
+    }
+    count = Math.max(0, Number(saved) || 0);
+  } catch { /* storage unavailable */ }
   return [type, { paused: false, count, seed: '', generated: false, easterEgg: false, eggKind: null, savedSetting: null }];
 }));
-let audioUrl = null;
-let audioChain = false;
-const IOS_AUDIO = isIOSBrowser(navigator);
+let musicUrl = null;
+let musicChain = false;
+const IOS_MUSIC = isIOSBrowser(navigator);
 const intervals = { text: 100, image: 100 };
 let pausedLengthTimer = 0;
+// Keep the root URL as the app base even after pushState changes the address.
+const appBase = new URL('.', location.href);
+const requestedTab = new URLSearchParams(location.search).get('tab');
+if (Object.hasOwn(TAB_PATHS, requestedTab)) {
+  // Static entry pages redirect through the root, retaining their seed.
+  const params = new URLSearchParams(location.search);
+  const seed = params.has('seed') ? params.get('seed') : null;
+  history.replaceState(null, '', tabUrl(requestedTab, appBase, seed) + location.hash);
+}
 let activeType = 'text';
 const imageCache = { width: 0, height: 0, ctx: null, data: null, words: null };
 const littleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
@@ -127,10 +151,10 @@ function translate() {
   $('#theme-toggle').setAttribute('aria-label', t('theme'));
   $('#tabs').setAttribute('aria-label', language === 'zh' ? '生成器' : 'Generators');
   $('#text-length-number').setAttribute('aria-label', t('length'));
-  $('#audio-bars-number').setAttribute('aria-label', t('bars'));
+  $('#music-bars-number').setAttribute('aria-label', t('bars'));
   $('#language-select').setAttribute('aria-label', t('language'));
-  $('#audio-instrument').setAttribute('aria-label', t('instrument'));
-  $('#audio-seek').setAttribute('aria-label', t('seek'));
+  $('#music-instrument').setAttribute('aria-label', t('instrument'));
+  $('#music-seek').setAttribute('aria-label', t('seek'));
   for (const type of Object.keys(states)) {
     $(`#${type}-count`).textContent = `${t('generated')}: ${states[type].count.toLocaleString(language === 'zh' ? 'zh-CN' : 'en')}`;
     $(`#${type}-seed-input`).setAttribute('aria-label', `${t('seed')} · ${t('seedHint')}`);
@@ -139,10 +163,10 @@ function translate() {
   }
   $('#text-meta').textContent = `${$('#text-length').value} ${t('characters')}`;
   if (states.text.eggKind === 'dark') $('#text-length-hint').textContent = t('darkLengthHint');
-  if (states.audio.eggKind === 'dark') $('#audio-bars-hint').textContent = t('darkBarsHint');
-  if (states.audio.piece) {
-    $('#audio-meta').textContent = `${states.audio.piece.bars.length} ${t('measures')}`;
-    updateScoreHeading(states.audio.piece);
+  if (states.music.eggKind === 'dark') $('#music-bars-hint').textContent = t('darkBarsHint');
+  if (states.music.piece) {
+    $('#music-meta').textContent = `${states.music.piece.bars.length} ${t('measures')}`;
+    updateScoreHeading(states.music.piece);
   }
   for (const type of Object.keys(states)) validateSeedField(type, false);
   updatePlaybackControls();
@@ -154,15 +178,15 @@ function updateControls(type) {
   status.replaceChildren();
   status.classList.toggle('is-easter', state.easterEgg);
   status.classList.toggle('is-dark-egg', state.eggKind === 'dark');
-  if (type === 'audio') $('#audio-generate').disabled = state.easterEgg;
-  if (type === 'audio' && !state.generated) {
+  if (type === 'music') $('#music-generate').disabled = state.easterEgg;
+  if (type === 'music' && !state.generated) {
     status.textContent = t('notGenerated');
     status.classList.add('is-paused');
-    $('#audio-pause').disabled = true;
-    $('#audio-pause').textContent = `Ⅱ ${t('pause')}`;
-    $('#audio-export').disabled = true;
-    $('#audio-playback').hidden = true;
-    $('#audio-generate').textContent = t('generateAudio');
+    $('#music-pause').disabled = true;
+    $('#music-pause').textContent = `Ⅱ ${t('pause')}`;
+    $('#music-export').disabled = true;
+    $('#music-playback').hidden = true;
+    $('#music-generate').textContent = t('generateMusic');
   } else {
     if (state.easterEgg) {
       status.textContent = t('easterEgg');
@@ -174,10 +198,10 @@ function updateControls(type) {
     }
     $(`#${type}-pause`).disabled = false;
     $(`#${type}-pause`).textContent = state.paused ? `▶ ${t('resume')}` : `Ⅱ ${t('pause')}`;
-    if (type === 'audio') {
-      $('#audio-export').disabled = false;
-      $('#audio-playback').hidden = false;
-      $('#audio-generate').textContent = t('generateNext');
+    if (type === 'music') {
+      $('#music-export').disabled = false;
+      $('#music-playback').hidden = false;
+      $('#music-generate').textContent = t('generateNext');
     }
   }
   $(`#${type}-copy-seed`).disabled = !state.seed;
@@ -204,17 +228,23 @@ function paintCount(type) {
 function persistCount(type) {
   try { localStorage.setItem(`murphy_count_${type}`, String(states[type].count)); } catch { /* storage unavailable */ }
 }
+function updateRouteSeed(type, seed) {
+  if (activeType !== type || $('#app').hasAttribute('inert')) return;
+  const next = tabUrl(type, appBase, seed);
+  if (location.pathname + location.search !== next) history.replaceState(null, '', next);
+}
 function recordGeneration(type, seed) {
   const state = states[type];
   const first = !state.generated;
   state.seed = seed;
   state.generated = true;
+  updateRouteSeed(type, seed);
   state.count++;
-  if (type === 'audio' || state.count % 10 === 0) persistCount(type);
+  if (type === 'music' || state.count % 10 === 0) persistCount(type);
   $(`#${type}-seed-input`).value = seed;
   if (!$(`#${type}-seed-error`).hidden) showSeedError(type);
-  if (type === 'audio' || first || performance.now() - (state.lastCountPaint || 0) >= 400) paintCount(type);
-  if (first || type === 'audio') updateControls(type);
+  if (type === 'music' || first || performance.now() - (state.lastCountPaint || 0) >= 400) paintCount(type);
+  if (first || type === 'music') updateControls(type);
 }
 function schedule(type, callback) {
   clearInterval(states[type].timer);
@@ -223,7 +253,7 @@ function schedule(type, callback) {
   }
 }
 function stopGeneration(type) {
-  if (type === 'audio' && IOS_AUDIO) $('#audio-player').loop = false;
+  if (type === 'music' && IOS_MUSIC) $('#music-player').loop = false;
   if (type === 'text') { clearTimeout(pausedLengthTimer); pausedLengthTimer = 0; }
   states[type].paused = true;
   clearInterval(states[type].timer);
@@ -249,13 +279,13 @@ function setEasterState(type, active, kind = 'friendly') {
       $('#image-width').value = String(rows[0].length + 2);
       $('#image-height').value = String(rows.length + 2);
     } else {
-      state.savedSetting = $('#audio-bars').value;
+      state.savedSetting = $('#music-bars').value;
       const bars = kind === 'dark' ? '1' : '4';
-      $('#audio-bars').min = bars;
-      $('#audio-bars-number').min = bars;
-      $('#audio-bars-hint').textContent = kind === 'dark' ? t('darkBarsHint') : t('barsHint');
-      $('#audio-bars').value = bars;
-      $('#audio-bars-number').value = bars;
+      $('#music-bars').min = bars;
+      $('#music-bars-number').min = bars;
+      $('#music-bars-hint').textContent = kind === 'dark' ? t('darkBarsHint') : t('barsHint');
+      $('#music-bars').value = bars;
+      $('#music-bars-number').value = bars;
     }
   } else {
     if (type === 'text') {
@@ -270,11 +300,11 @@ function setEasterState(type, active, kind = 'friendly') {
       imageCache.width = 0;
       imageCache.height = 0;
     } else {
-      $('#audio-bars').min = '4';
-      $('#audio-bars-number').min = '4';
-      $('#audio-bars-hint').textContent = t('barsHint');
-      $('#audio-bars').value = state.savedSetting;
-      $('#audio-bars-number').value = state.savedSetting;
+      $('#music-bars').min = '4';
+      $('#music-bars-number').min = '4';
+      $('#music-bars-hint').textContent = t('barsHint');
+      $('#music-bars').value = state.savedSetting;
+      $('#music-bars-number').value = state.savedSetting;
     }
     state.savedSetting = null;
   }
@@ -284,7 +314,7 @@ function setEasterState(type, active, kind = 'friendly') {
   const controls = {
     text: ['text-length', 'text-length-number'],
     image: ['image-width', 'image-height'],
-    audio: ['audio-bars', 'audio-bars-number'],
+    music: ['music-bars', 'music-bars-number'],
   };
   for (const id of controls[type]) $(`#${id}`).disabled = active;
   if (type === 'text') $('#panel-text').classList.toggle('is-dark-text-egg', active && kind === 'dark');
@@ -393,18 +423,18 @@ function clock(seconds) {
   return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
 }
 function updatePlaybackControls() {
-  const player = $('#audio-player');
-  const state = states.audio;
+  const player = $('#music-player');
+  const state = states.music;
   const segment = state.batch?.segments[state.batch.activeIndex];
   const duration = segment?.duration ?? (Number.isFinite(player.duration) ? player.duration
     : state.piece ? pieceDuration(state.piece) : 0);
   const position = segment ? Math.max(0, Math.min(duration, player.currentTime - segment.start)) : player.currentTime;
-  $('#audio-play-toggle').textContent = player.paused ? `▶ ${t('playCurrent')}` : `Ⅱ ${t('pauseCurrent')}`;
-  $('#audio-seek').value = duration > 0 ? String(Math.round(position / duration * 1000)) : '0';
-  $('#audio-time').textContent = `${clock(position)} / ${clock(duration)}`;
+  $('#music-play-toggle').textContent = player.paused ? `▶ ${t('playCurrent')}` : `Ⅱ ${t('pauseCurrent')}`;
+  $('#music-seek').value = duration > 0 ? String(Math.round(position / duration * 1000)) : '0';
+  $('#music-time').textContent = `${clock(position)} / ${clock(duration)}`;
 }
 function updateMediaMetadata() {
-  const state = states.audio;
+  const state = states.music;
   if (!state.piece || !state.seed || !('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
   const instrumentName = dictionaries[language][state.instrument] || state.instrument;
   // The two PNG sizes let the OS choose a suitable lock-screen artwork.
@@ -427,15 +457,15 @@ function clearPlaybackHighlight() {
   activeNote = null;
 }
 function syncBackgroundSegment() {
-  const state = states.audio;
+  const state = states.music;
   const batch = state.batch;
   if (!batch) return false;
-  const player = $('#audio-player');
+  const player = $('#music-player');
   const time = player.currentTime;
   const wrapped = !player.paused && batch.lastTime > batch.totalDuration - 1 && time < 1 && time < batch.lastTime - .5;
   batch.lastTime = time;
-  if (wrapped && !document.hidden && !state.paused && audioChain) {
-    generateAudio(randomSeed(), true); // replace a completed foreground cycle with fresh randomness
+  if (wrapped && !document.hidden && !state.paused && musicChain) {
+    generateMusic(randomSeed(), true); // replace a completed foreground cycle with fresh randomness
     return true;
   }
   const index = segmentAtTime(batch, time);
@@ -444,17 +474,18 @@ function syncBackgroundSegment() {
     const segment = batch.segments[index];
     state.piece = segment.piece;
     state.seed = segment.seed;
+    updateRouteSeed('music', segment.seed);
     state.blob = segment.blob;
-    $('#audio-seed-input').value = segment.seed;
-    $('#audio-meta').textContent = `${segment.piece.bars.length} ${t('measures')}`;
+    $('#music-seed-input').value = segment.seed;
+    $('#music-meta').textContent = `${segment.piece.bars.length} ${t('measures')}`;
     renderScore(segment.piece);
     updateMediaMetadata();
   }
   return false;
 }
 function updatePlaybackHighlight() {
-  const player = $('#audio-player');
-  const state = states.audio;
+  const player = $('#music-player');
+  const state = states.music;
   if (document.hidden || player.paused || player.ended || !state.piece) return;
   if (syncBackgroundSegment()) return;
   const now = performance.now();
@@ -474,7 +505,7 @@ function updatePlaybackHighlight() {
     activeNote = next;
     activeNote?.classList.add('is-playing');
     if (activeNote) {
-      const score = $('#audio-score');
+      const score = $('#music-score');
       const viewport = score.getBoundingClientRect();
       const note = activeNote.getBoundingClientRect();
       if (note.right > viewport.right - 18) score.scrollLeft += note.right - viewport.right + 32;
@@ -486,42 +517,76 @@ function updatePlaybackHighlight() {
   highlightFrame = requestAnimationFrame(updatePlaybackHighlight);
 }
 function updateScoreHeading(piece) {
-  const heading = $('#audio-score-heading');
+  const heading = $('#music-score-heading');
   heading.textContent = `1=${piece.key.name}    ${piece.numerator}/${piece.denominator}    ♩=${piece.bpm}`;
   heading.hidden = false;
 }
-function drawSlurArcs(piece, rows) {
-  for (const { measure } of rows) measure.querySelector('.score-slur-layer')?.remove();
+let flatBridgeObserver = null;
+function renderFlatBridges(piece, rows, marks) {
+  const flow = $('#music-score .score-flow');
+  if (!flow || states.music.piece !== piece) return;
+  flow.querySelectorAll('.jianpu-flat-bridge').forEach((bridge) => bridge.remove());
+  const flowRect = flow.getBoundingClientRect();
+  if (!flowRect.width || !flowRect.height) return;
+  const fontSize = parseFloat(getComputedStyle(flow).fontSize);
+  const unit = fontSize / 2; // jpfont-nds digits occupy half an em.
+  const scaleX = flowRect.width / (flow.offsetWidth || flowRect.width);
+  const scaleY = flowRect.height / (flow.offsetHeight || flowRect.height);
+  const xOf = (x) => (x - flowRect.left) / scaleX;
+  const yOf = (y) => (y - flowRect.top) / scaleY;
+  function bridge(x1, x2, y, middle, barlineX = null) {
+    if (x2 - x1 < 2) return;
+    const outer = document.createElement('span');
+    outer.className = 'jianpu-flat-bridge';
+    outer.setAttribute('aria-hidden', 'true');
+    outer.style.left = `${x1}px`;
+    outer.style.top = `${y + fontSize * .23}px`;
+    outer.style.width = `${x2 - x1}px`;
+    const fragment = document.createDocumentFragment();
+    const segments = jianpuFlatLineSegments(x2 - x1, unit, middle === 'I',
+      barlineX === null ? null : barlineX - x1);
+    for (const { offset, glyph } of segments) {
+      const segment = document.createElement('span');
+      segment.className = 'jianpu-flat-segment';
+      segment.style.left = `${offset}px`;
+      segment.textContent = ` ${glyph}`;
+      fragment.append(segment);
+    }
+    outer.append(fragment);
+    flow.append(outer);
+  }
   for (const slur of piece.slurs || []) {
-    const row = rows[slur.bar];
-    if (!row) continue;
-    const first = row.notes[slur.start]?.getBoundingClientRect();
-    const last = row.notes[slur.end]?.getBoundingClientRect();
+    if (scoreSlurPlan(piece, slur).kind === 'arc') continue;
+    const first = rows[slur.startBar]?.notes[slur.start]?.getBoundingClientRect();
+    const last = rows[slur.endBar]?.notes[slur.end]?.getBoundingClientRect();
     if (!first || !last) continue;
-    const measure = row.measure;
-    const rect = measure.getBoundingClientRect();
-    const x1 = first.left + first.width / 2 - rect.left;
-    const x2 = last.left + last.width / 2 - rect.left;
-    const arch = Math.max(9, Math.min(20, (x2 - x1) * 0.13));
-    const base = Math.max(arch + 3, Math.min(first.top, last.top) - rect.top - 10);
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.classList.add('score-slur-layer');
-    svg.setAttribute('viewBox', `0 0 ${rect.width} ${rect.height}`);
-    svg.setAttribute('aria-hidden', 'true');
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', `M ${x1} ${base} C ${x1 + (x2 - x1) * .23} ${base - arch}, ${x2 - (x2 - x1) * .23} ${base - arch}, ${x2} ${base}`);
-    path.classList.add('score-slur-path');
-    svg.append(path);
-    measure.append(svg);
+    const middle = marks.get(`${slur.startBar}:${slur.start}`) === 'U' ? 'I' : 'K';
+    const left = xOf(first.left + first.width / 2) + unit * .24;
+    const right = xOf(last.left + last.width / 2) - unit * .24;
+    const firstY = yOf(first.top);
+    const lastY = yOf(last.top);
+    if (Math.abs(firstY - lastY) < fontSize / 2) {
+      const barline = slur.startBar !== slur.endBar
+        ? rows[slur.startBar].measure.querySelector('.score-barline')?.getBoundingClientRect() : null;
+      bridge(left, right, firstY, middle,
+        barline ? xOf(barline.left + barline.width / 2) : null);
+    } else {
+      // Measures wrap atomically. Continue the flat line at the two row edges.
+      const firstEdge = xOf(rows[slur.startBar].measure.getBoundingClientRect().right);
+      const lastEdge = xOf(rows[slur.endBar].measure.getBoundingClientRect().left);
+      bridge(left, firstEdge - unit * .2, firstY, middle);
+      bridge(lastEdge + unit * .2, right, lastY, middle);
+    }
   }
 }
 function renderScore(piece) {
   clearPlaybackHighlight();
-  const score = $('#audio-score');
+  const score = $('#music-score');
   score.scrollLeft = 0; score.scrollTop = 0;
   updateScoreHeading(piece);
   const flow = document.createElement('div'); flow.className = 'score-flow';
   const timeline = [];
+  const slurMarks = scoreSlurMarks(piece);
   const rows = [];
   let elapsedTicks = 0;
   for (let b = 0; b < piece.bars.length; b++) {
@@ -538,22 +603,70 @@ function renderScore(piece) {
         label.textContent = `${first.tuplet}:${first.tupletBase}`;
         group.append(label);
       }
+      const startIndex = at;
       const tile = [];
       do { tile.push(bar[at++]); } while (at < bar.length && bar[at].group === first.group);
       const run = document.createElement('span'); run.className = 'jianpu-run';
       tile.forEach((event, index) => {
         const previous = tile[index - 1];
-        if (index && (event.value === 'quarter' || previous.value === 'quarter')) {
+        const noteIndex = at - tile.length + index;
+        const compactSlur = piece.slurs?.some((slur) =>
+          slur.startBar === b && slur.endBar === b &&
+          slur.end === noteIndex && slur.start === noteIndex - 1 &&
+          previous?.group === event.group);
+        if (compactSlur) run.append(document.createTextNode(
+          event.value === 'quarter' || previous.value === 'quarter' ? ' ' : 'l',
+        ));
+        if (index && !compactSlur && (event.value === 'quarter' || previous.value === 'quarter')) {
           run.append(document.createTextNode(' '));
         }
         const note = document.createElement('span'); note.className = 'jianpu-note';
-        note.textContent = jianpuToken(event, piece.key.semitones);
+        const token = jianpuToken(event, piece.key.semitones);
+        const restExtension = event.midi === null && /^0{2,}$/.test(token);
+        const count = restExtension ? token.length - 1 : token.match(/-+$/)?.[0].length || 0;
+        note.append(document.createTextNode(count ? token.slice(0, -count) : token));
+        for (let extensionIndex = 0; extensionIndex < count; extensionIndex++) {
+          const extension = document.createElement('span');
+          extension.className = 'jianpu-extension';
+          extension.textContent = restExtension ? '0' : '-';
+          note.append(extension);
+        }
+        const marks = slurMarks.get(`${b}:${noteIndex}`);
+        if (marks) {
+          const glyph = document.createElement('span');
+          glyph.className = 'jianpu-slur';
+          glyph.setAttribute('aria-hidden', 'true');
+          glyph.textContent = marks;
+          note.append(glyph);
+        }
         run.append(note);
         notesInMeasure.push(note);
         elapsedTicks += event.ticks;
         timeline.push({ endTick: elapsedTicks, midi: event.midi, element: note });
       });
       group.append(run);
+      if (first.tuplet) {
+        // Z/C are the font's native square-ended connecting line. Clip their
+        // long strokes to this rhythmic group rather than drawing a CSS border.
+        const bracket = document.createElement('span');
+        bracket.className = 'jianpu-tuplet-bracket';
+        bracket.setAttribute('aria-hidden', 'true');
+        for (const [side, glyph] of [['left', 'Z'], ['right', 'C']]) {
+          const end = document.createElement('span');
+          end.className = `bracket-${side}`;
+          end.textContent = glyph;
+          bracket.append(end);
+        }
+        group.append(bracket);
+      }
+      if (startIndex > 0) {
+        // Use the font's exact quarter-space instead of a fractional CSS gap.
+        const spacer = document.createElement('span');
+        spacer.className = 'jianpu-group-space';
+        spacer.setAttribute('aria-hidden', 'true');
+        spacer.textContent = 'l';
+        measure.append(spacer);
+      }
       measure.append(group);
     }
     const final = b === piece.bars.length - 1;
@@ -564,45 +677,51 @@ function renderScore(piece) {
     flow.append(measure);
     rows.push({ measure, notes: notesInMeasure });
   }
+  flatBridgeObserver?.disconnect();
   score.replaceChildren(flow);
-  states.audio.noteTimeline = timeline;
-  states.audio.scoreRows = rows;
-  requestAnimationFrame(() => { if (states.audio.piece === piece) drawSlurArcs(piece, rows); });
-  document.fonts?.load('27px "Nuduseng Jianpu"').then(() => {
-    if (states.audio.piece === piece) drawSlurArcs(piece, rows);
-  }).catch(() => {});
+  states.music.noteTimeline = timeline;
+  const place = () => {
+    if (states.music.piece !== piece) return;
+    renderFlatBridges(piece, rows, slurMarks);
+    if (typeof ResizeObserver !== 'undefined') {
+      flatBridgeObserver = new ResizeObserver(() => renderFlatBridges(piece, rows, slurMarks));
+      flatBridgeObserver.observe(flow);
+    }
+  };
+  if (document.fonts) document.fonts.load('27px "Nuduseng Jianpu"').then(place).catch(place);
+  else requestAnimationFrame(place);
 }
-function generateAudio(seed = randomSeed(), autoplay = false) {
-  const player = $('#audio-player');
+function generateMusic(seed = randomSeed(), autoplay = false) {
+  const player = $('#music-player');
   player.pause();
   const piece = seed === EASTER_SEED ? composeCelebration()
     : isDarkSeed(seed, language) ? composeDark()
-      : compose(Number($('#audio-bars').value), seededRandom(seed, 'audio'));
-  const instrument = $('#audio-instrument').value;
-  // iOS may suspend page JavaScript in the background. A native audio element
+      : compose(Number($('#music-bars').value), seededRandom(seed, 'music'));
+  const instrument = $('#music-instrument').value;
+  // iOS may suspend page JavaScript in the background. A native music element
   // can keep looping a bounded, pre-rendered WAV without an `ended` callback.
-  const continuousIOS = IOS_AUDIO && autoplay && !states.audio.easterEgg;
+  const continuousIOS = IOS_MUSIC && autoplay && !states.music.easterEgg;
   const batch = continuousIOS && pieceDuration(piece) < 180
-    ? buildBackgroundBatch(piece, seed, Number($('#audio-bars').value), instrument) : null;
+    ? buildBackgroundBatch(piece, seed, Number($('#music-bars').value), instrument) : null;
   const blob = batch ? batch.segments[0].blob : synthesizeWav(piece, instrument);
-  if (audioUrl) URL.revokeObjectURL(audioUrl);
-  audioUrl = URL.createObjectURL(batch?.blob || blob);
+  if (musicUrl) URL.revokeObjectURL(musicUrl);
+  musicUrl = URL.createObjectURL(batch?.blob || blob);
   player.loop = continuousIOS;
-  player.src = audioUrl;
-  states.audio.batch = batch;
-  states.audio.piece = piece;
-  states.audio.blob = blob;
-  states.audio.instrument = instrument;
-  $('#audio-meta').textContent = `${piece.bars.length} ${t('measures')}`;
+  player.src = musicUrl;
+  states.music.batch = batch;
+  states.music.piece = piece;
+  states.music.blob = blob;
+  states.music.instrument = instrument;
+  $('#music-meta').textContent = `${piece.bars.length} ${t('measures')}`;
   renderScore(piece);
-  recordGeneration('audio', seed);
+  recordGeneration('music', seed);
   if (batch && batch.segments.length > 1) {
-    states.audio.count += batch.segments.length - 1;
-    paintCount('audio'); persistCount('audio');
+    states.music.count += batch.segments.length - 1;
+    paintCount('music'); persistCount('music');
   }
   updateMediaMetadata();
   updatePlaybackControls();
-  if (autoplay) player.play().catch(() => { audioChain = false; updatePlaybackControls(); });
+  if (autoplay) player.play().catch(() => { musicChain = false; updatePlaybackControls(); });
 }
 function clampInput(element) {
   const min = Number(element.min), max = Number(element.max);
@@ -618,17 +737,22 @@ function bindRange(type, rangeId, numberId, callback) {
   });
   number.addEventListener('change', () => { clampInput(number); range.value = number.value; callback(); });
 }
-function download(blob, extension, seed) {
+function download(blob, type, extension, seed) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `Murphy-${extension}-${seed.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64)}.${extension}`;
+  anchor.download = exportFilename(type, seed, extension);
   document.body.append(anchor); anchor.click(); anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
-function selectTab(type) {
+function selectTab(type, navigate = false, fromUrl = false) {
+  if (!Object.hasOwn(TAB_PATHS, type)) return;
+  if (navigate) {
+    const next = tabUrl(type, appBase, states[type].generated ? states[type].seed : null);
+    if (location.pathname + location.search !== next) history.pushState(null, '', next);
+  }
   if (activeType === 'text') { clearTimeout(pausedLengthTimer); pausedLengthTimer = 0; }
-  if (activeType !== 'audio') { paintCount(activeType); persistCount(activeType); }
+  if (activeType !== 'music') { paintCount(activeType); persistCount(activeType); }
   activeType = type;
   clearInterval(states.text.timer);
   clearInterval(states.image.timer);
@@ -639,6 +763,13 @@ function selectTab(type) {
     tab.tabIndex = active ? 0 : -1;
     $(`#panel-${tab.dataset.tab}`).hidden = !active;
   });
+  if (fromUrl) {
+    const params = new URLSearchParams(location.search);
+    if (params.has('seed')) {
+      recreateSeed(type, params.get('seed'));
+      return;
+    }
+  }
   if ((type === 'text' || type === 'image') && !states[type].paused && !document.hidden) {
     const callback = type === 'text' ? generateText : generateImage;
     callback(); schedule(type, callback);
@@ -650,42 +781,44 @@ themeManager.init();
 $('#theme-toggle').addEventListener('click', () => themeManager.toggle());
 $('#language-select').value = language;
 $('#language-select').addEventListener('change', (event) => { language = event.target.value; translate(); });
-$('#tabs').addEventListener('click', (event) => { const tab = event.target.closest('.tab'); if (tab) selectTab(tab.dataset.tab); });
+$('#tabs').addEventListener('click', (event) => { const tab = event.target.closest('.tab'); if (tab) selectTab(tab.dataset.tab, true); });
 $('#tabs').addEventListener('keydown', (event) => {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
   const tabs = [...document.querySelectorAll('.tab')];
   const current = tabs.indexOf(document.activeElement);
   const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
-  event.preventDefault(); tabs[next].focus(); selectTab(tabs[next].dataset.tab);
+  event.preventDefault(); tabs[next].focus(); selectTab(tabs[next].dataset.tab, true);
 });
+function recreateSeed(type, seed) {
+  const input = $(`#${type}-seed-input`);
+  input.value = seed;
+  if (!validateSeedField(type)) { stopGeneration(type); return; }
+  stopGeneration(type);
+  if (type === 'music') musicChain = false;
+  const eggKind = seed === EASTER_SEED ? 'friendly' : isDarkSeed(seed, language) ? 'dark' : null;
+  if (states[type].easterEgg) setEasterState(type, false);
+  if (eggKind) {
+    setEasterState(type, true, eggKind);
+    const renderers = eggKind === 'dark'
+      ? { text: renderDarkText, image: renderDarkImage, music: generateMusic }
+      : { text: renderEasterText, image: renderEasterImage, music: generateMusic };
+    renderers[type](seed);
+    if (eggKind === 'dark') {
+      try { localStorage.setItem('666', 'true'); } catch { /* storage unavailable */ }
+    }
+  } else {
+    ({ text: generateText, image: generateImage, music: generateMusic })[type](seed);
+  }
+}
 for (const type of Object.keys(states)) {
   const input = $(`#${type}-seed-input`);
-  input.addEventListener('focus', () => { if (type !== 'audio' || states.audio.generated) stopGeneration(type); });
+  input.addEventListener('focus', () => { if (type !== 'music' || states.music.generated) stopGeneration(type); });
   input.addEventListener('input', () => {
-    if (type !== 'audio' || states.audio.generated) stopGeneration(type);
+    if (type !== 'music' || states.music.generated) stopGeneration(type);
     validateSeedField(type, false);
   });
   input.addEventListener('keydown', (event) => { if (event.key === 'Enter') $(`#${type}-apply-seed`).click(); });
-  $(`#${type}-apply-seed`).addEventListener('click', () => {
-    if (!validateSeedField(type)) return;
-    const seed = input.value;
-    stopGeneration(type);
-    if (type === 'audio') audioChain = false;
-    const eggKind = seed === EASTER_SEED ? 'friendly' : isDarkSeed(seed, language) ? 'dark' : null;
-    if (states[type].easterEgg) setEasterState(type, false);
-    if (eggKind) {
-      setEasterState(type, true, eggKind);
-      const renderers = eggKind === 'dark'
-        ? { text: renderDarkText, image: renderDarkImage, audio: generateAudio }
-        : { text: renderEasterText, image: renderEasterImage, audio: generateAudio };
-      renderers[type](seed);
-      if (eggKind === 'dark') {
-        try { localStorage.setItem('666', 'true'); } catch { /* storage unavailable */ }
-      }
-    } else {
-      ({ text: generateText, image: generateImage, audio: generateAudio })[type](seed);
-    }
-  });
+  $(`#${type}-apply-seed`).addEventListener('click', () => recreateSeed(type, input.value));
   $(`#${type}-copy-seed`).addEventListener('click', () => {
     if (states[type].seed) navigator.clipboard?.writeText(states[type].seed).catch(() => {});
   });
@@ -696,9 +829,9 @@ for (const type of Object.keys(states)) {
       setEasterState(type, false);
       state.paused = false;
       updateControls(type);
-      if (type === 'audio') {
-        audioChain = true;
-        generateAudio(randomSeed(), true);
+      if (type === 'music') {
+        musicChain = true;
+        generateMusic(randomSeed(), true);
       } else {
         const callback = type === 'text' ? generateText : generateImage;
         callback();
@@ -710,14 +843,14 @@ for (const type of Object.keys(states)) {
     state.paused = !state.paused;
     updateControls(type);
     if (state.paused) {
-      if (type === 'audio' && IOS_AUDIO) $('#audio-player').loop = false;
+      if (type === 'music' && IOS_MUSIC) $('#music-player').loop = false;
       if (type === 'text') { clearTimeout(pausedLengthTimer); pausedLengthTimer = 0; }
       clearInterval(state.timer); paintCount(type); persistCount(type);
     }
-    else if (type === 'audio') {
-      const player = $('#audio-player');
-      if (IOS_AUDIO) player.loop = audioChain;
-      if (audioChain && player.ended) generateAudio(randomSeed(), true);
+    else if (type === 'music') {
+      const player = $('#music-player');
+      if (IOS_MUSIC) player.loop = musicChain;
+      if (musicChain && player.ended) generateMusic(randomSeed(), true);
     } else {
       const callback = type === 'text' ? generateText : generateImage;
       callback(); schedule(type, callback);
@@ -751,23 +884,23 @@ textLengthNumber.addEventListener('change', () => {
   textLengthRange.value = textLengthNumber.value;
   if (states.text.paused) queuePausedLengthUpdate();
 });
-bindRange('audio', 'audio-bars', 'audio-bars-number', () => {
-  if (!states.audio.easterEgg && states.audio.generated && $('#audio-player').paused &&
-      $('#audio-seed-input').value === states.audio.seed && validateSeedField('audio', false)) generateAudio(states.audio.seed);
+bindRange('music', 'music-bars', 'music-bars-number', () => {
+  if (!states.music.easterEgg && states.music.generated && $('#music-player').paused &&
+      $('#music-seed-input').value === states.music.seed && validateSeedField('music', false)) generateMusic(states.music.seed);
 });
-$('#audio-instrument').addEventListener('change', () => {
-  const state = states.audio;
+$('#music-instrument').addEventListener('change', () => {
+  const state = states.music;
   if (!state.piece) return;
-  const player = $('#audio-player');
+  const player = $('#music-player');
   const wasPlaying = !player.paused;
   const position = player.currentTime;
   player.pause();
-  const instrument = $('#audio-instrument').value;
+  const instrument = $('#music-instrument').value;
   const batch = state.batch ? retimbreBackgroundBatch(state.batch, instrument) : null;
   const blob = batch ? batch.segments[batch.activeIndex].blob : synthesizeWav(state.piece, instrument);
   if (batch) batch.lastTime = position;
-  const oldUrl = audioUrl;
-  audioUrl = URL.createObjectURL(batch?.blob || blob);
+  const oldUrl = musicUrl;
+  musicUrl = URL.createObjectURL(batch?.blob || blob);
   state.batch = batch;
   state.blob = blob;
   state.instrument = instrument;
@@ -779,7 +912,7 @@ $('#audio-instrument').addEventListener('change', () => {
     updatePlaybackControls();
     if (wasPlaying) player.play().catch(updatePlaybackControls);
   }, { once: true });
-  player.src = audioUrl;
+  player.src = musicUrl;
   if (oldUrl) URL.revokeObjectURL(oldUrl);
   updatePlaybackControls();
 });
@@ -791,9 +924,9 @@ for (const id of ['image-width', 'image-height']) {
     }
   });
 }
-const player = $('#audio-player');
+const player = $('#music-player');
 player.addEventListener('play', () => {
-  if (!states.audio.paused) audioChain = true;
+  if (!states.music.paused) musicChain = true;
   updateMediaMetadata();
   cancelAnimationFrame(highlightFrame);
   updatePlaybackControls();
@@ -801,44 +934,44 @@ player.addEventListener('play', () => {
 });
 player.addEventListener('pause', () => { clearPlaybackHighlight(); updatePlaybackControls(); });
 player.addEventListener('seeked', () => {
-  if (states.audio.batch && !document.hidden) syncBackgroundSegment();
+  if (states.music.batch && !document.hidden) syncBackgroundSegment();
   if (!player.paused && !document.hidden) { cancelAnimationFrame(highlightFrame); updatePlaybackHighlight(); }
 });
 player.addEventListener('timeupdate', () => {
-  if (states.audio.batch && !document.hidden && !syncBackgroundSegment()) updatePlaybackControls();
+  if (states.music.batch && !document.hidden && !syncBackgroundSegment()) updatePlaybackControls();
 });
 player.addEventListener('ended', () => {
   clearPlaybackHighlight();
   updatePlaybackControls();
-  if (!states.audio.paused && audioChain) generateAudio(randomSeed(), true);
+  if (!states.music.paused && musicChain) generateMusic(randomSeed(), true);
 });
 player.addEventListener('loadedmetadata', updatePlaybackControls);
-$('#audio-play-toggle').addEventListener('click', () => {
-  if (!states.audio.generated) return;
+$('#music-play-toggle').addEventListener('click', () => {
+  if (!states.music.generated) return;
   if (player.paused) player.play().catch(updatePlaybackControls);
   else player.pause();
 });
-$('#audio-seek').addEventListener('change', (event) => {
-  const segment = states.audio.batch?.segments[states.audio.batch.activeIndex];
+$('#music-seek').addEventListener('change', (event) => {
+  const segment = states.music.batch?.segments[states.music.batch.activeIndex];
   const duration = segment?.duration ?? player.duration;
   if (Number.isFinite(duration)) player.currentTime = (segment?.start || 0) + duration * Number(event.target.value) / 1000;
   updatePlaybackControls();
 });
-$('#audio-generate').addEventListener('click', () => {
-  if (states.audio.easterEgg || !validateSeedField('audio', false)) return;
-  states.audio.paused = false;
-  audioChain = true;
-  generateAudio(randomSeed(), true);
+$('#music-generate').addEventListener('click', () => {
+  if (states.music.easterEgg || !validateSeedField('music', false)) return;
+  states.music.paused = false;
+  musicChain = true;
+  generateMusic(randomSeed(), true);
 });
-$('#text-export').addEventListener('click', () => download(new Blob([states.text.value || ''], { type: 'text/plain;charset=utf-8' }), 'txt', states.text.seed));
-$('#image-export').addEventListener('click', () => $('#image-canvas').toBlob((blob) => { if (blob) download(blob, 'png', states.image.seed); }, 'image/png'));
-$('#audio-export').addEventListener('click', () => { if (states.audio.blob) download(states.audio.blob, 'wav', states.audio.seed); });
-function restoreAudioUI() {
+$('#text-export').addEventListener('click', () => download(new Blob([states.text.value || ''], { type: 'text/plain;charset=utf-8' }), 'text', 'txt', states.text.seed));
+$('#image-export').addEventListener('click', () => $('#image-canvas').toBlob((blob) => { if (blob) download(blob, 'image', 'png', states.image.seed); }, 'image/png'));
+$('#music-export').addEventListener('click', () => { if (states.music.blob) download(states.music.blob, 'music', 'wav', states.music.seed); });
+function restoreMusicUI() {
   // The native media clock, not a background timer or wall-clock estimate, is
   // authoritative after iOS has suspended page scripts. Never pause the media.
   cancelAnimationFrame(highlightFrame);
   highlightFrame = 0;
-  if (states.audio.batch && syncBackgroundSegment()) return; // a fresh batch starts its own loop
+  if (states.music.batch && syncBackgroundSegment()) return; // a fresh batch starts its own loop
   updatePlaybackControls();
   if (!player.paused) updatePlaybackHighlight();
   else clearPlaybackHighlight();
@@ -849,20 +982,17 @@ document.addEventListener('visibilitychange', () => {
     clearPlaybackHighlight();
   }
   clearInterval(states.text.timer); clearInterval(states.image.timer);
-  if (document.hidden && activeType !== 'audio') { paintCount(activeType); persistCount(activeType); }
+  if (document.hidden && activeType !== 'music') { paintCount(activeType); persistCount(activeType); }
   if (!document.hidden) {
-    restoreAudioUI();
-    if (activeType !== 'audio' && !states[activeType].paused) {
+    restoreMusicUI();
+    if (activeType !== 'music' && !states[activeType].paused) {
       const callback = activeType === 'text' ? generateText : generateImage;
       callback(); schedule(activeType, callback);
     }
   }
 });
 window.addEventListener('pageshow', (event) => {
-  if (event.persisted && !document.hidden) restoreAudioUI();
-});
-window.addEventListener('resize', () => {
-  if (states.audio.piece && states.audio.scoreRows) drawSlurArcs(states.audio.piece, states.audio.scoreRows);
+  if (event.persisted && !document.hidden) restoreMusicUI();
 });
 window.addEventListener('pagehide', () => { for (const type of Object.keys(states)) persistCount(type); });
 // The site remains inert until an explicit adult confirmation. A refusal is
@@ -871,9 +1001,11 @@ function enterSite() {
   $('#age-gate').hidden = true;
   $('#app').removeAttribute('inert');
   document.body.classList.remove('age-locked');
-  generateText();
-  schedule('text', generateText);
+  selectTab(routeType(location.pathname, appBase.pathname), false, true);
 }
+window.addEventListener('popstate', () => {
+  if (!$('#app').hasAttribute('inert')) selectTab(routeType(location.pathname, appBase.pathname), false, true);
+});
 $('#age-yes').addEventListener('click', () => {
   try { localStorage.setItem('murphy_age_confirmed', 'true'); } catch { /* ask again next visit */ }
   enterSite();

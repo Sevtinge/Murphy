@@ -1,4 +1,4 @@
-// Browser Media Session presentation, independent of audio synthesis.
+// Browser Media Session presentation, independent of music synthesis.
 export function trackMetadata({ measures, instrument, seed, eggKind, baseUrl }) {
   const dark = eggKind === 'dark';
   const icon = dark ? 'murphy-dark-cover' : 'murphy-icon';
