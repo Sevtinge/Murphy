@@ -7,6 +7,7 @@ test('exports use Murphy_tab_seed_unixMilliseconds.extension', () => {
   assert.equal(exportFilename('text', 'Ab12', 'txt', at), 'Murphy_text_Ab12_1760000000000.txt');
   assert.equal(exportFilename('image', 'A+b/#', 'png', at), 'Murphy_picture_A%2Bb%2F%23_1760000000000.png');
   assert.equal(exportFilename('music', 'sevtinge', 'wav', at), 'Murphy_music_sevtinge_1760000000000.wav');
+  assert.equal(exportFilename('audio', 'hi', 'wav', at), 'Murphy_audio_hi_1760000000000.wav');
 });
 
 test('all random-length seeds fit intact; very long manual seeds remain distinguishable', () => {
@@ -19,5 +20,5 @@ test('all random-length seeds fit intact; very long manual seeds remain distingu
   assert.ok(longB.length <= 240);
   assert.notEqual(longA, longB);
   assert.match(longA, /^Murphy_music_(?:%21)+~[0-9a-f]{8}_1760000000000\.wav$/);
-  assert.throws(() => exportFilename('audio', 'x', 'wav', 1), RangeError);
+  assert.throws(() => exportFilename('unknown', 'x', 'wav', 1), RangeError);
 });

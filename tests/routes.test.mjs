@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { routeType, tabUrl, encodeSeed } from '../routes.js';
 
-test('text, picture and music have independent direct paths', () => {
+test('text, picture, music and audio have independent direct paths', () => {
   for (const [path, type] of [
-    ['/text', 'text'], ['/picture', 'image'], ['/music', 'music'], ['/audio', null], ['/', 'text'],
+    ['/text', 'text'], ['/picture', 'image'], ['/music', 'music'], ['/audio', 'audio'], ['/', 'text'],
   ]) assert.equal(routeType(path, '/'), type);
   assert.equal(routeType('/Murphy/music', '/Murphy/'), 'music');
 });
@@ -12,7 +12,7 @@ test('text, picture and music have independent direct paths', () => {
 test('per-tab links round-trip arbitrary valid seeds through the URL', () => {
   const base = new URL('https://example.test/Murphy/');
   const seed = 'A+b/#&=!*_Z';
-  for (const [type, path] of [['text', 'text'], ['image', 'picture'], ['music', 'music']]) {
+  for (const [type, path] of [['text', 'text'], ['image', 'picture'], ['music', 'music'], ['audio', 'audio']]) {
     const href = tabUrl(type, base, seed);
     const url = new URL(href, base);
     assert.equal(url.pathname, `/Murphy/${path}`);

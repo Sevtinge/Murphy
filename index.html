@@ -39,6 +39,7 @@
         <button class="tab active" type="button" id="tab-text" role="tab" aria-controls="panel-text" aria-selected="true" data-tab="text"><span class="tab-icon">Aa</span><span data-i18n="textTab">Text</span></button>
         <button class="tab" type="button" id="tab-image" role="tab" aria-controls="panel-image" aria-selected="false" tabindex="-1" data-tab="image"><span class="tab-icon">▦</span><span data-i18n="imageTab">Image</span></button>
         <button class="tab" type="button" id="tab-music" role="tab" aria-controls="panel-music" aria-selected="false" tabindex="-1" data-tab="music"><span class="tab-icon">♫</span><span data-i18n="musicTab">Music</span></button>
+        <button class="tab" type="button" id="tab-audio" role="tab" aria-controls="panel-audio" aria-selected="false" tabindex="-1" data-tab="audio"><span class="tab-icon">∿</span><span data-i18n="audioTab">Audio</span></button>
       </div>
 
       <section class="generator-panel" id="panel-text" role="tabpanel" aria-labelledby="tab-text">
@@ -101,6 +102,35 @@ Oh, that damned score—even Liszt would be helpless.</p></div><div class="panel
         <audio id="music-player" preload="none"></audio>
         <div class="music-playback" id="music-playback" hidden><button class="btn btn-secondary" id="music-play-toggle" type="button" data-i18n="playCurrent">Play current</button><input id="music-seek" type="range" min="0" max="1000" value="0" aria-label="Seek" /><span id="music-time">0:00 / 0:00</span></div>
         <div class="panel-actions"><button class="btn btn-secondary pause-btn" id="music-pause" type="button" disabled></button><button class="btn btn-primary" id="music-generate" type="button" data-i18n="generateMusic">Generate &amp; play</button><button class="btn btn-secondary" id="music-export" type="button" data-i18n="exportWav" disabled>Export .wav</button></div>
+      </section>
+      <section class="generator-panel" id="panel-audio" role="tabpanel" aria-labelledby="tab-audio" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">04</p><h3 data-i18n="audioTitle">Audio</h3><p data-i18n="audioDescription">Random frequencies.
+It sounds like a robot beeping and booping.
+Or perhaps a sliding rheostat at work.</p></div><div class="panel-stats"><span class="generation-count" id="audio-count"></span><span class="status" id="audio-status" aria-live="polite"></span></div></div>
+        <div class="seed-row"><label class="seed-label" for="audio-seed-input"><span data-i18n="seed">Seed</span><small data-i18n="seedHint">A fixed value corresponding to each generated result</small></label><div class="seed-controls"><input id="audio-seed-input" class="form-input seed-input" type="text" autocomplete="off" spellcheck="false" placeholder="Enter a seed" /><button class="btn btn-secondary" id="audio-apply-seed" type="button" data-i18n="applySeed">Recreate</button><button class="btn btn-secondary copy-seed" id="audio-copy-seed" type="button" data-i18n="copySeed" disabled>Copy</button></div><p class="seed-error" id="audio-seed-error" role="alert" hidden></p></div>
+        <div class="settings-row"><label class="field" for="audio-duration"><span data-i18n="toneDuration">Tone duration</span><span class="field-hint" id="audio-duration-hint" data-i18n="toneDurationHint">0.10–5.00 s · 0.05 s steps</span></label><div class="length-control"><input id="audio-duration" type="range" min="0.1" max="5" step="0.05" value="0.25" /><input id="audio-duration-number" class="form-input numeric-input" type="number" min="0.1" max="5" step="0.05" value="0.25" aria-label="Tone duration" /></div></div>
+        <div class="settings-row"><label class="field" for="audio-tones"><span data-i18n="toneCount">Number of tones</span><span class="field-hint" id="audio-tones-hint" data-i18n="toneCountHint">32–512 tones</span></label><div class="length-control"><input id="audio-tones" type="range" min="32" max="512" step="1" value="128" /><input id="audio-tones-number" class="form-input numeric-input" type="number" min="32" max="512" step="1" value="128" aria-label="Number of tones" /></div></div>
+        <div class="settings-row"><label class="field" for="audio-smooth"><span data-i18n="smoothTransition">Smooth transition</span><span class="field-hint" data-i18n="smoothHint">Continuously glide between frequencies</span></label><input id="audio-smooth" type="checkbox" role="switch" /></div>
+        <div class="settings-row"><label class="field" for="audio-human-sensitive"><span data-i18n="humanSensitive">Human-sensitive</span><span class="field-hint" data-i18n="humanSensitiveHint">75% at 250–3500 Hz · 20% at 3501–10000 Hz</span></label><input id="audio-human-sensitive" type="checkbox" role="switch" /></div>
+        <div class="preview-label"><span data-i18n="frequencySequence">FREQUENCY SEQUENCE</span><span id="audio-meta">—</span></div>
+        <div class="audio-frequency-chart" id="audio-frequency-chart" hidden>
+          <svg viewBox="0 0 1000 120" preserveAspectRatio="none" role="img" aria-label="Frequency trajectory">
+            <defs>
+              <clipPath id="audio-chart-clip" clipPathUnits="userSpaceOnUse"><rect id="audio-chart-clip-rect" x="0" y="0" width="0" height="120" /></clipPath>
+              <linearGradient id="audio-gold-fade" x1="0" y1="0" x2="0" y2="1"><stop class="fade-start" offset="0%" /><stop class="fade-end" offset="100%" /></linearGradient>
+            </defs>
+            <path id="audio-frequency-path" class="frequency-pending" />
+            <path id="audio-frequency-played-area" class="frequency-played-area" clip-path="url(#audio-chart-clip)" />
+            <path id="audio-frequency-played-path" class="frequency-played" clip-path="url(#audio-chart-clip)" />
+            <line id="audio-chart-playhead" x1="0" x2="0" y1="0" y2="120" />
+          </svg>
+          <div class="audio-chart-progress" id="audio-chart-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Playback progress"><span id="audio-chart-progress-fill"></span></div>
+        </div>
+        <div class="audio-frequency-list" id="audio-frequency-list" data-i18n="emptyAudio">Generate audio to see the frequency sequence.</div>
+        <div class="audio-frequency-monitor" aria-live="off"><div class="audio-frequency-readout"><span data-i18n="currentFrequency">Current frequency</span><strong id="audio-current-hz">— Hz</strong></div><div class="audio-frequency-track" id="audio-frequency-track" role="meter" aria-valuemin="20" aria-valuemax="20000" aria-valuenow="20" aria-label="Current frequency"><span id="audio-frequency-indicator"></span></div><div class="audio-frequency-endpoints"><span>20 Hz</span><span>20,000 Hz</span></div></div>
+        <audio id="audio-player" preload="metadata"></audio>
+        <div class="audio-playback" id="audio-playback" hidden><button class="btn btn-secondary" id="audio-play-toggle" type="button" data-i18n="playCurrent">Play current</button><input id="audio-seek" type="range" min="0" max="1000" value="0" aria-label="Seek" /><span id="audio-time">0:00 / 0:00</span></div>
+        <div class="panel-actions"><button class="btn btn-secondary pause-btn" id="audio-pause" type="button" disabled></button><button class="btn btn-primary" id="audio-generate" type="button" data-i18n="generateAudio">Generate &amp; play</button><button class="btn btn-secondary" id="audio-export" type="button" data-i18n="exportWav" disabled>Export .wav</button></div>
       </section>
       <p class="privacy-note" data-i18n="privacyNote">All content is generated locally.</p>
     </main>

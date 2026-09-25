@@ -1,4 +1,4 @@
-export const TAB_PATHS = Object.freeze({ text: 'text', image: 'picture', music: 'music' });
+export const TAB_PATHS = Object.freeze({ text: 'text', image: 'picture', music: 'music', audio: 'audio' });
 
 export function routeType(pathname, basePath) {
   const relative = pathname.startsWith(basePath)

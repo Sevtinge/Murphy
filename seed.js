@@ -1,4 +1,4 @@
-// Stable, browser-independent seeded PRNG shared by all three generators.
+// Stable, browser-independent seeded PRNG shared by all four generators.
 export const SEED_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*_-=+/';
 export const VALID_SEED = /^[A-Za-z0-9!@#$%^&*_=+\/-]+$/;
 export const EASTER_SEED = 'sevtinge';

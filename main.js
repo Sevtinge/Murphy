@@ -26,7 +26,8 @@ import { jianpuToken, scoreSlurMarks, scoreSlurPlan, jianpuFlatLineSegments } fr
 import { displayLineBreaks } from './text-format.js';
 import { TAB_PATHS, routeType, tabUrl } from './routes.js';
 import { exportFilename } from './export-name.js';
-import { trackMetadata } from './media-info.js';
+import { generateFrequencies, audioPreset, frequencyAt, frequencyPath, toneDurationTotal, tonePositionAt, wavHeader, MIN_HZ, MAX_HZ } from './audio-tone.js';
+import { trackMetadata, beepMetadata } from './media-info.js';
 import { buildBackgroundBatch, retimbreBackgroundBatch, segmentAtTime, pieceDuration, isIOSBrowser } from './background-music.js';
 
 const $ = (selector) => document.querySelector(selector);
@@ -49,7 +50,12 @@ const dictionaries = {
     characters: 'characters', measures: 'measures', beat: 'BPM', theme: 'Toggle theme',
     generated: 'generated',
     seed: 'Seed', seedHint: 'A fixed value corresponding to each generated result', applySeed: 'Recreate', copySeed: 'Copy',
-    notGenerated: 'Not generated', generateMusic: 'Generate & play', generateNext: 'Generate next & play',
+    notGenerated: 'Not generated', renderError: 'Audio generation failed', generateMusic: 'Generate & play', generateAudio: 'Generate & play', generateNext: 'Generate next & play',
+    audioTab: 'Audio', audioTitle: 'Audio', audioDescription: 'Random frequencies.\nIt sounds like a robot beeping and booping.\nOr perhaps a sliding rheostat at work.',
+    friendlyToneDurationHint: '0.40 / 0.40 / 0.80 s · fixed preset', darkToneDurationHint: '0.66 s · fixed preset', friendlyToneCountHint: '3 tones · fixed preset', darkToneCountHint: '66 tones · fixed preset',
+    toneDuration: 'Tone duration', toneDurationHint: '0.10–5.00 s · 0.05 s steps', toneCount: 'Number of tones', toneCountHint: '32–512 tones',
+    smoothTransition: 'Smooth transition', smoothHint: 'Continuously glide between frequencies', humanSensitive: 'Human-sensitive', humanSensitiveHint: '75% at 250–3500 Hz · 20% at 3501–10000 Hz', frequencySequence: 'FREQUENCY SEQUENCE',
+    emptyAudio: 'Generate audio to see the frequency sequence.', frequencyTrajectory: 'Frequency trajectory', chartProgress: 'Playback progress', currentFrequency: 'Current frequency', tones: 'tones', rendering: 'Rendering WAV',
     emptyScore: 'Generate music to see its notation.', seedPlaceholder: 'Enter a seed',
     electric: 'Electric piano', musicBox: 'Music box', pluck: 'Plucked strings', marimba: 'Marimba', organ: 'Organ',
     playCurrent: 'Play current', pauseCurrent: 'Pause', seek: 'Seek music',
@@ -78,7 +84,12 @@ const dictionaries = {
     characters: '字符', measures: '小节', beat: 'BPM', theme: '切换主题',
     generated: '已生成',
     seed: '种子', seedHint: '每个随机内容对应的固定值', applySeed: '复现', copySeed: '复制',
-    notGenerated: '未生成', generateMusic: '生成并播放', generateNext: '生成下一段并播放',
+    notGenerated: '未生成', renderError: '音频生成失败', generateMusic: '生成并播放', generateAudio: '生成并播放', generateNext: '生成下一段并播放',
+    audioTab: '音频', audioTitle: '音频', audioDescription: '随机频率。\n听起来像机器人在哔哔叭叭。\n也有可能是滑动变阻器的动静。',
+    friendlyToneDurationHint: '0.40 / 0.40 / 0.80 秒 · 固定预设', darkToneDurationHint: '0.66 秒 · 固定预设', friendlyToneCountHint: '固定 3 个音', darkToneCountHint: '固定 66 个音',
+    toneDuration: '每个音的时长', toneDurationHint: '0.10–5.00 秒 · 最小步长 0.05 秒', toneCount: '音的数量', toneCountHint: '32–512 个音',
+    smoothTransition: '平滑化', smoothHint: '在相邻频率之间连续过渡', humanSensitive: '人类敏感', humanSensitiveHint: '75% 落在 250–3500 Hz · 20% 落在 3501–10000 Hz', frequencySequence: '频率序列',
+    emptyAudio: '生成音频后显示频率序列。', frequencyTrajectory: '频率轨迹', chartProgress: '播放进度', currentFrequency: '当前频率', tones: '个音', rendering: '正在合成 WAV',
     emptyScore: '生成音频后显示简谱。', seedPlaceholder: '输入种子',
     electric: '电钢琴', musicBox: '八音盒', pluck: '拨弦', marimba: '马林巴', organ: '管风琴',
     playCurrent: '播放当前音频', pauseCurrent: '暂停播放', seek: '音频进度',
@@ -93,7 +104,7 @@ const dictionaries = {
 let language = /^zh(?:-|$)/i.test(navigator.languages?.[0] || navigator.language || '') ? 'zh' : 'en';
 // Translation strings may contain \n to make visible line breaks.
 const t = (key) => displayLineBreaks(dictionaries[language][key]);
-const states = Object.fromEntries(['text', 'image', 'music'].map((type) => {
+const states = Object.fromEntries(['text', 'image', 'music', 'audio'].map((type) => {
   let count = 0;
   try {
     const key = `murphy_count_${type}`;
@@ -111,6 +122,8 @@ const states = Object.fromEntries(['text', 'image', 'music'].map((type) => {
   } catch { /* storage unavailable */ }
   return [type, { paused: false, count, seed: '', generated: false, easterEgg: false, eggKind: null, savedSetting: null }];
 }));
+const toneState = { frequencies: [], duration: .25, durations: null, smooth: false, humanSensitive: false, blob: null, url: null, worker: null, taskId: 0, rendering: false, progress: 0, frame: 0, chips: [], currentChip: -1, error: false };
+let toneChain = false;
 let musicUrl = null;
 let musicChain = false;
 const IOS_MUSIC = isIOSBrowser(navigator);
@@ -155,6 +168,12 @@ function translate() {
   $('#language-select').setAttribute('aria-label', t('language'));
   $('#music-instrument').setAttribute('aria-label', t('instrument'));
   $('#music-seek').setAttribute('aria-label', t('seek'));
+  $('#audio-duration-number').setAttribute('aria-label', t('toneDuration'));
+  $('#audio-tones-number').setAttribute('aria-label', t('toneCount'));
+  $('#audio-seek').setAttribute('aria-label', t('seek'));
+  $('#audio-frequency-track').setAttribute('aria-label', t('currentFrequency'));
+  $('#audio-frequency-chart svg').setAttribute('aria-label', t('frequencyTrajectory'));
+  $('#audio-chart-progress').setAttribute('aria-label', t('chartProgress'));
   for (const type of Object.keys(states)) {
     $(`#${type}-count`).textContent = `${t('generated')}: ${states[type].count.toLocaleString(language === 'zh' ? 'zh-CN' : 'en')}`;
     $(`#${type}-seed-input`).setAttribute('aria-label', `${t('seed')} · ${t('seedHint')}`);
@@ -164,13 +183,21 @@ function translate() {
   $('#text-meta').textContent = `${$('#text-length').value} ${t('characters')}`;
   if (states.text.eggKind === 'dark') $('#text-length-hint').textContent = t('darkLengthHint');
   if (states.music.eggKind === 'dark') $('#music-bars-hint').textContent = t('darkBarsHint');
+  if (states.audio.easterEgg) {
+    const kind = states.audio.eggKind === 'dark' ? 'dark' : 'friendly';
+    $('#audio-duration-hint').textContent = t(`${kind}ToneDurationHint`);
+    $('#audio-tones-hint').textContent = t(`${kind}ToneCountHint`);
+  }
   if (states.music.piece) {
     $('#music-meta').textContent = `${states.music.piece.bars.length} ${t('measures')}`;
     updateScoreHeading(states.music.piece);
   }
+  if (toneState.frequencies.length) renderFrequencyList();
   for (const type of Object.keys(states)) validateSeedField(type, false);
   updatePlaybackControls();
-  updateMediaMetadata();
+  updateToneControls();
+  if (!$('#audio-player').paused) updateToneMediaMetadata();
+  else updateMediaMetadata();
 }
 function updateControls(type) {
   const state = states[type];
@@ -179,14 +206,24 @@ function updateControls(type) {
   status.classList.toggle('is-easter', state.easterEgg);
   status.classList.toggle('is-dark-egg', state.eggKind === 'dark');
   if (type === 'music') $('#music-generate').disabled = state.easterEgg;
-  if (type === 'music' && !state.generated) {
-    status.textContent = t('notGenerated');
+  if (type === 'audio' && toneState.rendering) {
+    status.textContent = `${t('rendering')} ${Math.round(toneState.progress * 100)}%`;
+    status.classList.remove('is-paused');
+    $('#audio-pause').disabled = false;
+    $('#audio-pause').textContent = `Ⅱ ${t('pause')}`;
+    $('#audio-export').disabled = true;
+    $('#audio-playback').hidden = true;
+    $('#audio-generate').textContent = t('generateNext');
+    return;
+  }
+  if ((type === 'music' || type === 'audio') && !state.generated) {
+    status.textContent = type === 'audio' && toneState.error ? t('renderError') : t('notGenerated');
     status.classList.add('is-paused');
-    $('#music-pause').disabled = true;
-    $('#music-pause').textContent = `Ⅱ ${t('pause')}`;
-    $('#music-export').disabled = true;
-    $('#music-playback').hidden = true;
-    $('#music-generate').textContent = t('generateMusic');
+    $(`#${type}-pause`).disabled = type === 'music' || !state.seed;
+    $(`#${type}-pause`).textContent = state.paused ? `▶ ${t('resume')}` : `Ⅱ ${t('pause')}`;
+    $(`#${type}-export`).disabled = true;
+    $(`#${type}-playback`).hidden = true;
+    $(`#${type}-generate`).textContent = t(type === 'music' ? 'generateMusic' : 'generateAudio');
   } else {
     if (state.easterEgg) {
       status.textContent = t('easterEgg');
@@ -198,10 +235,10 @@ function updateControls(type) {
     }
     $(`#${type}-pause`).disabled = false;
     $(`#${type}-pause`).textContent = state.paused ? `▶ ${t('resume')}` : `Ⅱ ${t('pause')}`;
-    if (type === 'music') {
-      $('#music-export').disabled = false;
-      $('#music-playback').hidden = false;
-      $('#music-generate').textContent = t('generateNext');
+    if (type === 'music' || type === 'audio') {
+      $(`#${type}-export`).disabled = false;
+      $(`#${type}-playback`).hidden = false;
+      $(`#${type}-generate`).textContent = t('generateNext');
     }
   }
   $(`#${type}-copy-seed`).disabled = !state.seed;
@@ -240,11 +277,11 @@ function recordGeneration(type, seed) {
   state.generated = true;
   updateRouteSeed(type, seed);
   state.count++;
-  if (type === 'music' || state.count % 10 === 0) persistCount(type);
+  if (type === 'music' || type === 'audio' || state.count % 10 === 0) persistCount(type);
   $(`#${type}-seed-input`).value = seed;
   if (!$(`#${type}-seed-error`).hidden) showSeedError(type);
-  if (type === 'music' || first || performance.now() - (state.lastCountPaint || 0) >= 400) paintCount(type);
-  if (first || type === 'music') updateControls(type);
+  if (type === 'music' || type === 'audio' || first || performance.now() - (state.lastCountPaint || 0) >= 400) paintCount(type);
+  if (first || type === 'music' || type === 'audio') updateControls(type);
 }
 function schedule(type, callback) {
   clearInterval(states[type].timer);
@@ -253,6 +290,7 @@ function schedule(type, callback) {
   }
 }
 function stopGeneration(type) {
+  if (type === 'audio') cancelAudioRender();
   if (type === 'music' && IOS_MUSIC) $('#music-player').loop = false;
   if (type === 'text') { clearTimeout(pausedLengthTimer); pausedLengthTimer = 0; }
   states[type].paused = true;
@@ -278,6 +316,22 @@ function setEasterState(type, active, kind = 'friendly') {
       const rows = kind === 'dark' ? DARK_CROSS_BITMAP : EASTER_BITMAP;
       $('#image-width').value = String(rows[0].length + 2);
       $('#image-height').value = String(rows.length + 2);
+    } else if (type === 'audio') {
+      state.savedSetting = [$('#audio-tones').value, $('#audio-duration').value,
+        $('#audio-smooth').checked, $('#audio-human-sensitive').checked];
+      const preset = audioPreset(kind === 'dark' ? (language === 'zh' ? '444' : '666') : EASTER_SEED, language);
+      const count = String(preset.frequencies.length);
+      const duration = String(preset.durations[0]);
+      for (const id of ['audio-tones', 'audio-tones-number']) {
+        $(`#${id}`).min = count; $(`#${id}`).max = count; $(`#${id}`).value = count;
+      }
+      for (const id of ['audio-duration', 'audio-duration-number']) {
+        $(`#${id}`).min = duration; $(`#${id}`).max = duration; $(`#${id}`).step = 'any'; $(`#${id}`).value = duration;
+      }
+      $('#audio-duration-hint').textContent = t(`${kind}ToneDurationHint`);
+      $('#audio-tones-hint').textContent = t(`${kind}ToneCountHint`);
+      $('#audio-smooth').checked = false;
+      $('#audio-human-sensitive').checked = false;
     } else {
       state.savedSetting = $('#music-bars').value;
       const bars = kind === 'dark' ? '1' : '4';
@@ -299,6 +353,18 @@ function setEasterState(type, active, kind = 'friendly') {
       [$('#image-width').value, $('#image-height').value] = state.savedSetting;
       imageCache.width = 0;
       imageCache.height = 0;
+    } else if (type === 'audio') {
+      const [count, duration, smooth, humanSensitive] = state.savedSetting;
+      for (const id of ['audio-tones', 'audio-tones-number']) {
+        $(`#${id}`).min = '32'; $(`#${id}`).max = '512'; $(`#${id}`).value = count;
+      }
+      for (const id of ['audio-duration', 'audio-duration-number']) {
+        $(`#${id}`).min = '0.1'; $(`#${id}`).max = '5'; $(`#${id}`).step = '0.05'; $(`#${id}`).value = duration;
+      }
+      $('#audio-duration-hint').textContent = t('toneDurationHint');
+      $('#audio-tones-hint').textContent = t('toneCountHint');
+      $('#audio-smooth').checked = smooth;
+      $('#audio-human-sensitive').checked = humanSensitive;
     } else {
       $('#music-bars').min = '4';
       $('#music-bars-number').min = '4';
@@ -315,6 +381,7 @@ function setEasterState(type, active, kind = 'friendly') {
     text: ['text-length', 'text-length-number'],
     image: ['image-width', 'image-height'],
     music: ['music-bars', 'music-bars-number'],
+    audio: ['audio-tones', 'audio-tones-number', 'audio-duration', 'audio-duration-number', 'audio-smooth', 'audio-human-sensitive'],
   };
   for (const id of controls[type]) $(`#${id}`).disabled = active;
   if (type === 'text') $('#panel-text').classList.toggle('is-dark-text-egg', active && kind === 'dark');
@@ -448,6 +515,17 @@ function updateMediaMetadata() {
     }));
   } catch (error) {
     console.warn('Media Session metadata unavailable:', error);
+  }
+}
+function updateToneMediaMetadata() {
+  const state = states.audio;
+  if (!state.seed || !('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata(beepMetadata({
+      seed: state.seed, eggKind: state.eggKind, baseUrl: document.baseURI,
+    }));
+  } catch (error) {
+    console.warn('Audio Media Session metadata unavailable:', error);
   }
 }
 function clearPlaybackHighlight() {
@@ -723,6 +801,131 @@ function generateMusic(seed = randomSeed(), autoplay = false) {
   updatePlaybackControls();
   if (autoplay) player.play().catch(() => { musicChain = false; updatePlaybackControls(); });
 }
+function cancelAudioRender() {
+  if (toneState.worker) { toneState.worker.terminate(); toneState.worker = null; }
+  toneState.taskId++;
+  toneState.rendering = false;
+  toneState.progress = 0;
+}
+function toneClock(seconds) {
+  const hundredths = Math.max(0, Math.round(seconds * 100));
+  return `${Math.floor(hundredths / 6000)}:${((hundredths % 6000) / 100).toFixed(2).padStart(5, '0')}`;
+}
+function renderFrequencyList() {
+  const list = $('#audio-frequency-list');
+  list.replaceChildren();
+  toneState.chips = [];
+  toneState.currentChip = -1;
+  for (const hz of toneState.frequencies.slice(0, 512)) {
+    const chip = document.createElement('span');
+    chip.className = 'frequency-chip';
+    chip.textContent = `${hz.toLocaleString(language === 'zh' ? 'zh-CN' : 'en')} Hz`;
+    list.append(chip);
+    toneState.chips.push(chip);
+  }
+  if (toneState.frequencies.length > 512) list.append(` … +${toneState.frequencies.length - 512}`);
+  const timing = toneState.durations || toneState.duration;
+  const path = frequencyPath(toneState.frequencies, timing, toneState.smooth);
+  $('#audio-frequency-path').setAttribute('d', path);
+  $('#audio-frequency-played-area').setAttribute('d', path ? `${path} L 1000 120 L 0 120 Z` : '');
+  $('#audio-frequency-played-path').setAttribute('d', path);
+  $('#audio-frequency-chart').hidden = !toneState.frequencies.length;
+  const seconds = toneDurationTotal(toneState.frequencies, timing);
+  $('#audio-meta').textContent = `${toneState.frequencies.length} ${t('tones')} · ${toneClock(seconds)}`;
+}
+function updateToneControls() {
+  const player = $('#audio-player');
+  const total = toneDurationTotal(toneState.frequencies, toneState.durations || toneState.duration);
+  const time = Number.isFinite(player.currentTime) ? Math.min(total, player.currentTime) : 0;
+  $('#audio-play-toggle').textContent = player.paused ? `▶ ${t('playCurrent')}` : `Ⅱ ${t('pauseCurrent')}`;
+  const progress = total > 0 ? Math.max(0, Math.min(1, time / total)) : 0;
+  $('#audio-seek').value = String(Math.round(progress * 1000));
+  const graphX = (progress * 1000).toFixed(2);
+  $('#audio-chart-clip-rect').setAttribute('width', graphX);
+  $('#audio-chart-playhead').setAttribute('x1', graphX);
+  $('#audio-chart-playhead').setAttribute('x2', graphX);
+  $('#audio-chart-progress-fill').style.width = `${progress * 100}%`;
+  $('#audio-chart-progress').setAttribute('aria-valuenow', String(Math.round(progress * 100)));
+  $('#audio-time').textContent = `${toneClock(time)} / ${toneClock(total)}`;
+  if (!toneState.frequencies.length) return;
+  const timing = toneState.durations || toneState.duration;
+  const hz = frequencyAt(toneState.frequencies, timing, time, toneState.smooth);
+  $('#audio-current-hz').textContent = `${Math.round(hz).toLocaleString(language === 'zh' ? 'zh-CN' : 'en')} Hz`;
+  $('#audio-frequency-indicator').style.left = `${(hz - MIN_HZ) / (MAX_HZ - MIN_HZ) * 100}%`;
+  $('#audio-frequency-track').setAttribute('aria-valuenow', String(Math.round(hz)));
+  const index = tonePositionAt(toneState.frequencies, timing, time).index;
+  if (index !== toneState.currentChip) {
+    toneState.chips[toneState.currentChip]?.classList.remove('is-current');
+    toneState.chips[index]?.classList.add('is-current');
+    toneState.currentChip = index;
+  }
+}
+function tickToneProgress() {
+  updateToneControls();
+  if (!$('#audio-player').paused && !document.hidden) toneState.frame = requestAnimationFrame(tickToneProgress);
+}
+function generateAudio(seed = randomSeed(), autoplay = false) {
+  cancelAudioRender();
+  cancelAnimationFrame(toneState.frame);
+  const player = $('#audio-player');
+  player.pause();
+  player.removeAttribute('src');
+  player.load();
+  if (toneState.url) URL.revokeObjectURL(toneState.url);
+  toneState.url = null;
+  toneState.blob = null;
+  toneState.error = false;
+  const preset = audioPreset(seed, language);
+  const count = Number($('#audio-tones').value);
+  const duration = preset?.durations || Number($('#audio-duration').value);
+  toneState.humanSensitive = !preset && $('#audio-human-sensitive').checked;
+  toneState.frequencies = preset?.frequencies || generateFrequencies(seed, count, toneState.humanSensitive);
+  toneState.duration = Array.isArray(duration) ? duration[0] : duration;
+  toneState.durations = Array.isArray(duration) ? duration : null;
+  toneState.smooth = !preset && $('#audio-smooth').checked;
+  toneState.rendering = true;
+  toneState.progress = 0;
+  states.audio.generated = false;
+  states.audio.seed = seed;
+  $('#audio-seed-input').value = seed;
+  updateRouteSeed('audio', seed);
+  renderFrequencyList();
+  updateToneControls();
+  updateControls('audio');
+  const id = ++toneState.taskId;
+  const chunks = [];
+  try {
+    const worker = new Worker(new URL('./audio-worker.js', import.meta.url), { type: 'module' });
+    toneState.worker = worker;
+    const fail = () => {
+      if (id !== toneState.taskId) return;
+      cancelAudioRender();
+      toneState.error = true;
+      updateControls('audio');
+    };
+    worker.onerror = fail;
+    worker.onmessage = ({ data }) => {
+      if (id !== toneState.taskId || data.id !== id) return;
+      if (data.type === 'error') { fail(); return; }
+      if (data.type === 'chunk') {
+        chunks.push(data.blob);
+        toneState.progress = data.progress;
+        updateControls('audio');
+      } else if (data.type === 'done') {
+        const header = wavHeader(data.totalFrames);
+        toneState.blob = new Blob([header, ...chunks], { type: 'audio/wav' });
+        toneState.url = URL.createObjectURL(toneState.blob);
+        worker.terminate(); toneState.worker = null;
+        toneState.rendering = false;
+        player.src = toneState.url;
+        recordGeneration('audio', seed);
+        updateToneControls();
+        if (autoplay && !states.audio.paused) player.play().catch(updateToneControls);
+      }
+    };
+    worker.postMessage({ type: 'render', id, frequencies: toneState.frequencies, duration, smooth: toneState.smooth });
+  } catch { cancelAudioRender(); toneState.error = true; updateControls('audio'); }
+}
 function clampInput(element) {
   const min = Number(element.min), max = Number(element.max);
   const value = Number(element.value);
@@ -780,7 +983,12 @@ $('#current-year').textContent = new Date().getFullYear();
 themeManager.init();
 $('#theme-toggle').addEventListener('click', () => themeManager.toggle());
 $('#language-select').value = language;
-$('#language-select').addEventListener('change', (event) => { language = event.target.value; translate(); });
+$('#language-select').addEventListener('change', (event) => {
+  language = event.target.value;
+  if (states.audio.seed && /^(?:6{3,}|4{3,})$/.test(states.audio.seed)
+      && (states.audio.generated || toneState.rendering)) recreateSeed('audio', states.audio.seed);
+  translate();
+});
 $('#tabs').addEventListener('click', (event) => { const tab = event.target.closest('.tab'); if (tab) selectTab(tab.dataset.tab, true); });
 $('#tabs').addEventListener('keydown', (event) => {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -795,19 +1003,21 @@ function recreateSeed(type, seed) {
   if (!validateSeedField(type)) { stopGeneration(type); return; }
   stopGeneration(type);
   if (type === 'music') musicChain = false;
-  const eggKind = seed === EASTER_SEED ? 'friendly' : isDarkSeed(seed, language) ? 'dark' : null;
+  if (type === 'audio') toneChain = false;
+  const eggKind = type === 'audio' ? audioPreset(seed, language)?.kind || null
+    : seed === EASTER_SEED ? 'friendly' : isDarkSeed(seed, language) ? 'dark' : null;
   if (states[type].easterEgg) setEasterState(type, false);
   if (eggKind) {
     setEasterState(type, true, eggKind);
     const renderers = eggKind === 'dark'
-      ? { text: renderDarkText, image: renderDarkImage, music: generateMusic }
-      : { text: renderEasterText, image: renderEasterImage, music: generateMusic };
+      ? { text: renderDarkText, image: renderDarkImage, music: generateMusic, audio: generateAudio }
+      : { text: renderEasterText, image: renderEasterImage, music: generateMusic, audio: generateAudio };
     renderers[type](seed);
     if (eggKind === 'dark') {
       try { localStorage.setItem('666', 'true'); } catch { /* storage unavailable */ }
     }
   } else {
-    ({ text: generateText, image: generateImage, music: generateMusic })[type](seed);
+    ({ text: generateText, image: generateImage, music: generateMusic, audio: generateAudio })[type](seed);
   }
 }
 for (const type of Object.keys(states)) {
@@ -832,6 +1042,9 @@ for (const type of Object.keys(states)) {
       if (type === 'music') {
         musicChain = true;
         generateMusic(randomSeed(), true);
+      } else if (type === 'audio') {
+        toneChain = true;
+        generateAudio(randomSeed(), true);
       } else {
         const callback = type === 'text' ? generateText : generateImage;
         callback();
@@ -844,13 +1057,19 @@ for (const type of Object.keys(states)) {
     updateControls(type);
     if (state.paused) {
       if (type === 'music' && IOS_MUSIC) $('#music-player').loop = false;
+      if (type === 'audio') cancelAudioRender();
       if (type === 'text') { clearTimeout(pausedLengthTimer); pausedLengthTimer = 0; }
       clearInterval(state.timer); paintCount(type); persistCount(type);
+      if (type === 'audio') updateControls(type);
     }
     else if (type === 'music') {
       const player = $('#music-player');
       if (IOS_MUSIC) player.loop = musicChain;
       if (musicChain && player.ended) generateMusic(randomSeed(), true);
+    } else if (type === 'audio') {
+      toneChain = true;
+      if (!state.generated) generateAudio(state.seed || randomSeed(), true);
+      else if (toneChain && $('#audio-player').ended) generateAudio(randomSeed(), true);
     } else {
       const callback = type === 'text' ? generateText : generateImage;
       callback(); schedule(type, callback);
@@ -883,6 +1102,16 @@ textLengthNumber.addEventListener('change', () => {
   clampInput(textLengthNumber);
   textLengthRange.value = textLengthNumber.value;
   if (states.text.paused) queuePausedLengthUpdate();
+});
+bindRange('audio', 'audio-tones', 'audio-tones-number', () => {});
+const durationRange = $('#audio-duration'), durationNumber = $('#audio-duration-number');
+durationRange.addEventListener('input', () => { durationNumber.value = durationRange.value; });
+durationNumber.addEventListener('change', () => {
+  const value = Number(durationNumber.value);
+  const clamped = Number.isFinite(value) ? Math.max(.1, Math.min(5, value)) : .25;
+  const stepped = Math.round((clamped - .1) / .05) * .05 + .1;
+  durationRange.value = stepped.toFixed(2);
+  durationNumber.value = durationRange.value;
 });
 bindRange('music', 'music-bars', 'music-bars-number', () => {
   if (!states.music.easterEgg && states.music.generated && $('#music-player').paused &&
@@ -926,6 +1155,7 @@ for (const id of ['image-width', 'image-height']) {
 }
 const player = $('#music-player');
 player.addEventListener('play', () => {
+  $('#audio-player').pause();
   if (!states.music.paused) musicChain = true;
   updateMediaMetadata();
   cancelAnimationFrame(highlightFrame);
@@ -966,6 +1196,39 @@ $('#music-generate').addEventListener('click', () => {
 $('#text-export').addEventListener('click', () => download(new Blob([states.text.value || ''], { type: 'text/plain;charset=utf-8' }), 'text', 'txt', states.text.seed));
 $('#image-export').addEventListener('click', () => $('#image-canvas').toBlob((blob) => { if (blob) download(blob, 'image', 'png', states.image.seed); }, 'image/png'));
 $('#music-export').addEventListener('click', () => { if (states.music.blob) download(states.music.blob, 'music', 'wav', states.music.seed); });
+const tonePlayer = $('#audio-player');
+tonePlayer.addEventListener('play', () => {
+  $('#music-player').pause();
+  updateToneMediaMetadata();
+  cancelAnimationFrame(toneState.frame); tickToneProgress();
+});
+tonePlayer.addEventListener('pause', () => { cancelAnimationFrame(toneState.frame); updateToneControls(); });
+tonePlayer.addEventListener('timeupdate', updateToneControls);
+tonePlayer.addEventListener('ended', () => {
+  cancelAnimationFrame(toneState.frame);
+  updateToneControls();
+  if (!states.audio.paused && toneChain) generateAudio(randomSeed(), true);
+});
+$('#audio-play-toggle').addEventListener('click', () => {
+  if (!states.audio.generated) return;
+  if (tonePlayer.paused) tonePlayer.play().catch(updateToneControls);
+  else tonePlayer.pause();
+});
+$('#audio-seek').addEventListener('change', (event) => {
+  const total = toneDurationTotal(toneState.frequencies, toneState.durations || toneState.duration);
+  if (Number.isFinite(total) && total > 0) tonePlayer.currentTime = total * Number(event.target.value) / 1000;
+  updateToneControls();
+});
+$('#audio-generate').addEventListener('click', () => {
+  if (states.audio.easterEgg) setEasterState('audio', false);
+  if (!validateSeedField('audio', false)) return;
+  states.audio.paused = false;
+  toneChain = true;
+  generateAudio(randomSeed(), true);
+});
+$('#audio-export').addEventListener('click', () => {
+  if (toneState.blob) download(toneState.blob, 'audio', 'wav', states.audio.seed);
+});
 function restoreMusicUI() {
   // The native media clock, not a background timer or wall-clock estimate, is
   // authoritative after iOS has suspended page scripts. Never pause the media.
@@ -980,12 +1243,14 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     clearTimeout(pausedLengthTimer); pausedLengthTimer = 0;
     clearPlaybackHighlight();
+    cancelAnimationFrame(toneState.frame);
   }
   clearInterval(states.text.timer); clearInterval(states.image.timer);
   if (document.hidden && activeType !== 'music') { paintCount(activeType); persistCount(activeType); }
   if (!document.hidden) {
     restoreMusicUI();
-    if (activeType !== 'music' && !states[activeType].paused) {
+    if (!tonePlayer.paused) { cancelAnimationFrame(toneState.frame); tickToneProgress(); }
+    if ((activeType === 'text' || activeType === 'image') && !states[activeType].paused) {
       const callback = activeType === 'text' ? generateText : generateImage;
       callback(); schedule(activeType, callback);
     }

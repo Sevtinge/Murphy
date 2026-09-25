@@ -173,11 +173,11 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
 .timbre-settings .form-select { width: min(250px, 58%); }
 @media (max-width: 600px) { .timbre-settings { flex-direction: row; align-items: center; } .timbre-settings .form-select { width: min(205px, 68%); } }
 #music-player { display: none; }
-.music-playback { display: flex; align-items: center; gap: 11px; margin-top: 20px; padding: 10px 12px; background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: var(--radius-sm); }
-.music-playback .btn { flex-shrink: 0; white-space: nowrap; }
-.music-playback input[type="range"] { flex: 1; min-width: 35px; }
+.music-playback, .audio-playback { display: flex; align-items: center; gap: 11px; margin-top: 20px; padding: 10px 12px; background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: var(--radius-sm); }
+.music-playback .btn, .audio-playback .btn { flex-shrink: 0; white-space: nowrap; }
+.music-playback input[type="range"], .audio-playback input[type="range"] { flex: 1; min-width: 35px; }
 #music-time { color: var(--text-secondary); font-size: .74rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
-@media (max-width: 600px) { .music-playback { flex-wrap: wrap; } .music-playback .btn { width: 100%; justify-content: center; } }
+@media (max-width: 600px) { .music-playback, .audio-playback { flex-wrap: wrap; } .music-playback .btn, .audio-playback .btn { width: 100%; justify-content: center; } }
 .score-shell { background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: var(--radius-md); overflow: hidden; }
 .score-shell .score-heading { padding: 12px 16px; border-bottom: 1px solid var(--border-light); color: var(--accent); background: var(--bg-primary); font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .score-shell .score-preview { border: 0; border-radius: 0; max-height: 420px; overflow: auto; }
@@ -291,3 +291,42 @@ body, #app { min-height: 100vh; min-height: 100dvh; }
 .source-link { margin-bottom: 10px; overflow-wrap: anywhere; }
 .source-link a { color: var(--accent); text-decoration: none; font-weight: 600; }
 .source-link a:hover { text-decoration: underline; }
+
+/* Independent seeded-frequency audio generator. */
+#audio-player { display: none; }
+#audio-smooth, #audio-human-sensitive { appearance: none; -webkit-appearance: none; flex: 0 0 auto; width: 46px; height: 26px; border: 1px solid var(--border); border-radius: 99px; background: var(--bg-tertiary); cursor: pointer; position: relative; transition: background .2s ease; }
+#audio-smooth::before, #audio-human-sensitive::before { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--bg-primary); box-shadow: 0 1px 3px rgba(0,0,0,.2); transition: transform .2s ease; }
+#audio-smooth:checked, #audio-human-sensitive:checked { background: var(--accent); border-color: var(--accent); }
+#audio-smooth:checked::before, #audio-human-sensitive:checked::before { transform: translateX(20px); }
+#audio-smooth:focus-visible, #audio-human-sensitive:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 40%, transparent); outline-offset: 3px; }
+.audio-frequency-list { min-height: 92px; max-height: 170px; overflow: auto; padding: 16px; border: 1px solid var(--border-light); border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-secondary); font: .78rem/1.8 ui-monospace, Consolas, monospace; overflow-wrap: anywhere; }
+.audio-frequency-list .frequency-chip { display: inline-block; margin: 2px 7px 2px 0; padding: 2px 6px; border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary); }
+.audio-frequency-list .frequency-chip.is-current { background: color-mix(in srgb, var(--accent) 24%, var(--bg-primary)); color: var(--accent); }
+.audio-frequency-monitor { margin-top: 24px; padding: 16px; border: 1px solid var(--border-light); border-radius: var(--radius-sm); background: var(--bg-primary); }
+.audio-frequency-readout, .audio-frequency-endpoints { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.audio-frequency-readout { color: var(--text-secondary); font-size: .78rem; }
+.audio-frequency-readout strong { color: var(--text-primary); font-size: 1.12rem; font-variant-numeric: tabular-nums; }
+.audio-frequency-track { position: relative; height: 9px; margin: 14px 5px 10px; border-radius: 99px; background: linear-gradient(90deg, var(--border-light), var(--accent)); }
+.audio-frequency-track > span { position: absolute; top: 50%; left: 0; width: 15px; height: 15px; border: 3px solid var(--bg-primary); border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--accent); transform: translate(-50%, -50%); }
+.audio-frequency-endpoints { color: var(--text-tertiary); font-size: .7rem; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 600px) {
+  #panel-audio .panel-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #panel-audio .panel-actions .btn { min-width: 0; }
+  #audio-generate { grid-column: 1 / -1; grid-row: 1; }
+  #audio-pause, #audio-export { grid-row: 2; }
+}
+
+.audio-frequency-chart { position: relative; height: 124px; margin-bottom: 12px; border: 1px solid var(--border-light); border-radius: var(--radius-sm); background: var(--bg-primary); overflow: hidden; }
+.audio-frequency-chart svg { display: block; width: 100%; height: 100%; }
+.audio-frequency-chart path { fill: none; stroke: var(--accent); stroke-width: 1.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+
+.audio-frequency-chart .frequency-pending { stroke: var(--text-tertiary); opacity: .6; }
+.audio-frequency-chart .frequency-played { stroke: var(--accent); opacity: 1; }
+#audio-chart-playhead { stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; opacity: .85; pointer-events: none; }
+.audio-chart-progress { position: absolute; inset: auto 0 0; height: 4px; background: var(--border-light); overflow: hidden; }
+.audio-chart-progress > span { display: block; width: 0; height: 100%; background: var(--accent); }
+
+.audio-frequency-chart .frequency-played-area { fill: url(#audio-gold-fade); stroke: none; }
+.audio-frequency-chart .fade-start { stop-color: var(--accent); stop-opacity: .52; }
+.audio-frequency-chart .fade-end { stop-color: var(--accent); stop-opacity: 0; }

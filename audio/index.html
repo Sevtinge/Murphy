@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Murphy</title>
+  <script>
+    const target = new URL('../', location.href);
+    target.searchParams.set('tab', 'audio');
+    const params = new URLSearchParams(location.search);
+    if (params.has('seed')) target.searchParams.set('seed', params.get('seed'));
+    target.hash = location.hash;
+    location.replace(target.href);
+  </script>
+</head>
+<body><a href="../?tab=audio">Open Murphy</a></body>
+</html>
