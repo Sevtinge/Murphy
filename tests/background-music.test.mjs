@@ -5,7 +5,7 @@ import { seededRandom } from '../seed.js';
 import { jianpuToken, jianpuSlurGlyph, scoreSlurMarks, scoreSlurPlan, jianpuFlatLineSegments } from '../notation.js';
 import {
   buildBackgroundBatch, concatenateWav, isIOSBrowser,
-  retimbreBackgroundBatch, segmentAtTime,
+  retimbreBackgroundBatch, remainingMusicSegment, segmentAtTime,
 } from '../background-music.js';
 
 test('iPhone and iPad are detected without treating desktop Macs as iOS', () => {
@@ -236,4 +236,28 @@ test('existing music seeds keep their original deterministic stream', () => {
     0.7280638713855296, 0.2595076553989202,
     0.34409772139042616, 0.20462653902359307,
   ]);
+});
+
+
+test('stopping an iOS batch retains only the remainder of its current piece', async () => {
+  const first = compose(4, seededRandom('stop1', 'music'));
+  let next = 0;
+  const batch = buildBackgroundBatch(first, 'stop1', 4, 'piano', {
+    targetSeconds: 60, maxSegments: 8, seedFactory: () => `stop-next-${++next}`,
+  });
+  assert.ok(batch.segments.length > 1);
+  const current = batch.segments[1];
+  const offset = Math.min(current.duration / 3, 1);
+  const remainder = remainingMusicSegment(batch, current.start + offset);
+  assert.equal(remainder.segment.seed, current.seed);
+  assert.ok(remainder.offset <= offset && remainder.offset > 0);
+  const original = new Uint8Array(await current.blob.arrayBuffer());
+  const trimmed = new Uint8Array(await remainder.blob.arrayBuffer());
+  const start = 44 + Math.floor(offset * 16000) * 2;
+  assert.deepEqual(trimmed.slice(44, 108), original.slice(start, start + 64));
+  const header = new DataView(trimmed.buffer);
+  assert.equal(header.getUint32(24, true), 16000);
+  assert.equal(header.getUint32(40, true), trimmed.length - 44);
+  assert.ok(trimmed.length < current.blob.size);
+  assert.ok(trimmed.length < batch.blob.size);
 });

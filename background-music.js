@@ -14,10 +14,7 @@ export function pieceDuration(piece) {
   return piece.bars.length * piece.barTicks * 60 / (piece.bpm * TICKS_PER_BEAT);
 }
 
-// WAV files share the same PCM format, so their data chunks can be joined as
-// Blob slices without decoding or copying every sample on the main thread.
-export function concatenateWav(blobs, sampleRate = BATCH_RATE) {
-  const dataBytes = blobs.reduce((size, blob) => size + blob.size - 44, 0);
+function pcmHeader(dataBytes, sampleRate = BATCH_RATE) {
   if (dataBytes > 0xffffffff - 36) throw new RangeError('Background music batch exceeds WAV size limit');
   const header = new ArrayBuffer(44);
   const view = new DataView(header);
@@ -28,7 +25,31 @@ export function concatenateWav(blobs, sampleRate = BATCH_RATE) {
   view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
   view.setUint16(32, 2, true); view.setUint16(34, 16, true);
   ascii(36, 'data'); view.setUint32(40, dataBytes, true);
-  return new Blob([header, ...blobs.map((blob) => blob.slice(44))], { type: 'audio/wav' });
+  return header;
+}
+
+// WAV files share the same PCM format, so their data chunks can be joined as
+// Blob slices without decoding or copying every sample on the main thread.
+export function concatenateWav(blobs, sampleRate = BATCH_RATE) {
+  const dataBytes = blobs.reduce((size, blob) => size + blob.size - 44, 0);
+  return new Blob([pcmHeader(dataBytes, sampleRate), ...blobs.map((blob) => blob.slice(44))], { type: 'audio/wav' });
+}
+
+// Stop an iOS pre-rendered batch without waiting through its queued pieces.
+// The remaining PCM of the current piece is a standalone, non-looping WAV.
+export function remainingMusicSegment(batch, time) {
+  const index = segmentAtTime(batch, time);
+  const segment = batch.segments[index];
+  const frames = (segment.blob.size - 44) / 2;
+  const offsetFrames = Math.min(frames - 1, Math.max(0,
+    Math.floor((Math.max(0, time) - segment.start) * BATCH_RATE),
+  ));
+  const remainingBytes = (frames - offsetFrames) * 2;
+  return {
+    segment,
+    offset: offsetFrames / BATCH_RATE,
+    blob: new Blob([pcmHeader(remainingBytes), segment.blob.slice(44 + offsetFrames * 2)], { type: 'audio/wav' }),
+  };
 }
 
 function assemble(pieces, instrument, activeIndex = 0) {

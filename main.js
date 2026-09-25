@@ -24,11 +24,12 @@ import { randomSeed, seededRandom, VALID_SEED, EASTER_SEED, isDarkSeed } from '.
 import { EASTER_TEXT, EASTER_BITMAP, DARK_CROSS_TEXT, DARK_CROSS_BITMAP, DARK_RED } from './easter.js';
 import { jianpuToken, scoreSlurMarks, scoreSlurPlan, jianpuFlatLineSegments } from './notation.js';
 import { displayLineBreaks } from './text-format.js';
+import { resolveLanguage } from './language.js';
 import { TAB_PATHS, routeType, tabUrl } from './routes.js';
 import { exportFilename } from './export-name.js';
 import { generateFrequencies, audioPreset, frequencyAt, frequencyPath, toneDurationTotal, tonePositionAt, wavHeader, MIN_HZ, MAX_HZ } from './audio-tone.js';
 import { trackMetadata, beepMetadata } from './media-info.js';
-import { buildBackgroundBatch, retimbreBackgroundBatch, segmentAtTime, pieceDuration, isIOSBrowser } from './background-music.js';
+import { buildBackgroundBatch, retimbreBackgroundBatch, remainingMusicSegment, segmentAtTime, pieceDuration, isIOSBrowser } from './background-music.js';
 
 const $ = (selector) => document.querySelector(selector);
 const dictionaries = {
@@ -63,8 +64,8 @@ const dictionaries = {
     acousticGuitar: 'Acoustic guitar', harp: 'Harp', bass: 'Bass guitar', violin: 'Violin', cello: 'Cello',
     flute: 'Flute', clarinet: 'Clarinet', saxophone: 'Saxophone', trumpet: 'Trumpet', bell: 'Bell', synthLead: 'Synth lead',
     invalidSeed: 'Use only A–Z, a–z, 0–9 and ! @ # $ % ^ & * _ - = + / (no spaces).', emptySeed: 'Enter a seed first.', easterEgg: 'Easter egg',
-    ageTitle: 'Confirm your age.', ageDescription: 'In accordance with relevant laws, we need to know your age in order to provide the corresponding services.\nAre you 18 years of age or older?',
-    ageYes: 'Yes', ageNo: 'No', ageDenied: 'We are unable to provide service to you.',
+    ageEyebrow: 'Murphy · User Verify', ageTitle: 'Confirm your age.', ageDescription: 'In accordance with relevant laws, we need to know your age in order to provide the corresponding services.\nAre you 18 years of age or older?',
+    ageYes: 'Yes', ageNo: 'No', ageDenied: 'We cannot provide service to you.',
   },
   zh: {
     language: '语言', eyebrow: '墨菲定律', heading: '凡是可能出错的事情，最终都会出错。',
@@ -97,11 +98,13 @@ const dictionaries = {
     acousticGuitar: '木吉他', harp: '竖琴', bass: '贝斯', violin: '小提琴', cello: '大提琴',
     flute: '长笛', clarinet: '单簧管', saxophone: '萨克斯', trumpet: '小号', bell: '钟声', synthLead: '合成器主音',
     invalidSeed: '仅允许大小写字母、数字和 ! @ # $ % ^ & * _ - = + /，不能含空格。', emptySeed: '请先输入种子。', easterEgg: '彩蛋',
-    ageTitle: '确认您的年龄。', ageDescription: '根据有关法律规定，我们需要了解您的年龄以提供对应服务。\n您年满 18 周岁了吗？',
-    ageYes: '是', ageNo: '否', ageDenied: '很遗憾，我们暂时无法为您提供服务。',
+    ageEyebrow: 'Murphy · 用户验证', ageTitle: '确认您的年龄。', ageDescription: '根据有关法律规定，我们需要了解您的年龄以提供对应服务。\n您年满 18 周岁了吗？',
+    ageYes: '是', ageNo: '否', ageDenied: '我们无法为您提供服务。',
   },
 };
-let language = /^zh(?:-|$)/i.test(navigator.languages?.[0] || navigator.language || '') ? 'zh' : 'en';
+let savedLanguage = null;
+try { savedLanguage = localStorage.getItem('murphy_language'); } catch { /* storage unavailable */ }
+let language = resolveLanguage({ saved: savedLanguage, primary: navigator.language, preferred: navigator.languages });
 // Translation strings may contain \n to make visible line breaks.
 const t = (key) => displayLineBreaks(dictionaries[language][key]);
 const states = Object.fromEntries(['text', 'image', 'music', 'audio'].map((type) => {
@@ -289,9 +292,34 @@ function schedule(type, callback) {
     states[type].timer = setInterval(callback, intervals[type]);
   }
 }
+function stopMusicAfterCurrentPiece() {
+  const state = states.music;
+  const player = $('#music-player');
+  player.loop = false;
+  if (!IOS_MUSIC || !state.batch) return;
+  const wasPlaying = !player.paused;
+  const { segment, offset, blob } = remainingMusicSegment(state.batch, player.currentTime);
+  const oldUrl = musicUrl;
+  musicUrl = URL.createObjectURL(blob);
+  state.batch = null;
+  state.playbackOffset = offset;
+  state.piece = segment.piece;
+  state.seed = segment.seed;
+  state.blob = segment.blob; // Export remains the complete current piece.
+  $('#music-seed-input').value = segment.seed;
+  $('#music-meta').textContent = `${segment.piece.bars.length} ${t('measures')}`;
+  updateRouteSeed('music', segment.seed);
+  renderScore(segment.piece);
+  updateMediaMetadata();
+  if (oldUrl) player.addEventListener('loadedmetadata', () => URL.revokeObjectURL(oldUrl), { once: true });
+  player.src = musicUrl;
+  // Keep play() in this click's user activation for mobile Safari.
+  if (wasPlaying) player.play().catch(updatePlaybackControls);
+  updatePlaybackControls();
+}
 function stopGeneration(type) {
   if (type === 'audio') cancelAudioRender();
-  if (type === 'music' && IOS_MUSIC) $('#music-player').loop = false;
+  if (type === 'music') stopMusicAfterCurrentPiece();
   if (type === 'text') { clearTimeout(pausedLengthTimer); pausedLengthTimer = 0; }
   states[type].paused = true;
   clearInterval(states[type].timer);
@@ -493,9 +521,11 @@ function updatePlaybackControls() {
   const player = $('#music-player');
   const state = states.music;
   const segment = state.batch?.segments[state.batch.activeIndex];
-  const duration = segment?.duration ?? (Number.isFinite(player.duration) ? player.duration
-    : state.piece ? pieceDuration(state.piece) : 0);
-  const position = segment ? Math.max(0, Math.min(duration, player.currentTime - segment.start)) : player.currentTime;
+  const duration = segment?.duration ?? (state.playbackOffset && state.piece
+    ? pieceDuration(state.piece) : Number.isFinite(player.duration) ? player.duration
+      : state.piece ? pieceDuration(state.piece) : 0);
+  const position = segment ? Math.max(0, Math.min(duration, player.currentTime - segment.start))
+    : Math.min(duration, player.currentTime + (state.playbackOffset || 0));
   $('#music-play-toggle').textContent = player.paused ? `▶ ${t('playCurrent')}` : `Ⅱ ${t('pauseCurrent')}`;
   $('#music-seek').value = duration > 0 ? String(Math.round(position / duration * 1000)) : '0';
   $('#music-time').textContent = `${clock(position)} / ${clock(duration)}`;
@@ -570,7 +600,8 @@ function updatePlaybackHighlight() {
   if (now - lastProgressPaint >= 100) { updatePlaybackControls(); lastProgressPaint = now; }
   const timeline = state.noteTimeline || [];
   const segment = state.batch?.segments[state.batch.activeIndex];
-  const tick = (player.currentTime - (segment?.start || 0)) * state.piece.bpm * TICKS_PER_BEAT / 60;
+  const tick = (player.currentTime - (segment?.start || 0) + (segment ? 0 : state.playbackOffset || 0))
+    * state.piece.bpm * TICKS_PER_BEAT / 60;
   let low = 0, high = timeline.length;
   while (low < high) {
     const middle = (low + high) >>> 1;
@@ -787,6 +818,7 @@ function generateMusic(seed = randomSeed(), autoplay = false) {
   player.loop = continuousIOS;
   player.src = musicUrl;
   states.music.batch = batch;
+  states.music.playbackOffset = 0;
   states.music.piece = piece;
   states.music.blob = blob;
   states.music.instrument = instrument;
@@ -985,6 +1017,7 @@ $('#theme-toggle').addEventListener('click', () => themeManager.toggle());
 $('#language-select').value = language;
 $('#language-select').addEventListener('change', (event) => {
   language = event.target.value;
+  try { localStorage.setItem('murphy_language', language); } catch { /* storage unavailable */ }
   if (states.audio.seed && /^(?:6{3,}|4{3,})$/.test(states.audio.seed)
       && (states.audio.generated || toneState.rendering)) recreateSeed('audio', states.audio.seed);
   translate();
@@ -1056,7 +1089,7 @@ for (const type of Object.keys(states)) {
     state.paused = !state.paused;
     updateControls(type);
     if (state.paused) {
-      if (type === 'music' && IOS_MUSIC) $('#music-player').loop = false;
+      if (type === 'music') stopMusicAfterCurrentPiece();
       if (type === 'audio') cancelAudioRender();
       if (type === 'text') { clearTimeout(pausedLengthTimer); pausedLengthTimer = 0; }
       clearInterval(state.timer); paintCount(type); persistCount(type);
@@ -1064,7 +1097,7 @@ for (const type of Object.keys(states)) {
     }
     else if (type === 'music') {
       const player = $('#music-player');
-      if (IOS_MUSIC) player.loop = musicChain;
+      if (IOS_MUSIC) player.loop = Boolean(state.batch && musicChain);
       if (musicChain && player.ended) generateMusic(randomSeed(), true);
     } else if (type === 'audio') {
       toneChain = true;
@@ -1122,7 +1155,7 @@ $('#music-instrument').addEventListener('change', () => {
   if (!state.piece) return;
   const player = $('#music-player');
   const wasPlaying = !player.paused;
-  const position = player.currentTime;
+  const position = player.currentTime + (state.batch ? 0 : state.playbackOffset || 0);
   player.pause();
   const instrument = $('#music-instrument').value;
   const batch = state.batch ? retimbreBackgroundBatch(state.batch, instrument) : null;
@@ -1131,6 +1164,7 @@ $('#music-instrument').addEventListener('change', () => {
   const oldUrl = musicUrl;
   musicUrl = URL.createObjectURL(batch?.blob || blob);
   state.batch = batch;
+  state.playbackOffset = 0;
   state.blob = blob;
   state.instrument = instrument;
   updateMediaMetadata();
@@ -1184,7 +1218,9 @@ $('#music-play-toggle').addEventListener('click', () => {
 $('#music-seek').addEventListener('change', (event) => {
   const segment = states.music.batch?.segments[states.music.batch.activeIndex];
   const duration = segment?.duration ?? player.duration;
-  if (Number.isFinite(duration)) player.currentTime = (segment?.start || 0) + duration * Number(event.target.value) / 1000;
+  if (Number.isFinite(duration)) player.currentTime = Math.max(0,
+    (segment?.start || 0) + duration * Number(event.target.value) / 1000
+    - (segment ? 0 : states.music.playbackOffset || 0));
   updatePlaybackControls();
 });
 $('#music-generate').addEventListener('click', () => {
@@ -1262,7 +1298,11 @@ window.addEventListener('pageshow', (event) => {
 window.addEventListener('pagehide', () => { for (const type of Object.keys(states)) persistCount(type); });
 // The site remains inert until an explicit adult confirmation. A refusal is
 // intentionally not persisted, so the question reappears on the next visit.
+let siteEntered = false;
 function enterSite() {
+  if (siteEntered) return;
+  siteEntered = true;
+  document.documentElement.dataset.ageConfirmed = 'true';
   $('#age-gate').hidden = true;
   $('#app').removeAttribute('inert');
   document.body.classList.remove('age-locked');
@@ -1283,7 +1323,8 @@ $('#age-no').addEventListener('click', () => {
 translate();
 let previouslyConfirmed = false;
 try { previouslyConfirmed = localStorage.getItem('murphy_age_confirmed') === 'true'; } catch { /* storage unavailable */ }
-if (previouslyConfirmed) enterSite();
+window.murphyBooted = true;
+if (previouslyConfirmed || window.murphyAdultConfirmedThisVisit) enterSite();
 
 
 

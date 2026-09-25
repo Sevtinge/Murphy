@@ -9,6 +9,19 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Murphy" />
   <title>Murphy</title>
+  <script>
+    // Set the initial language and age-gate visibility before the main module loads.
+    (() => {
+      let saved = null;
+      try {
+        saved = localStorage.getItem('murphy_language');
+        if (localStorage.getItem('murphy_age_confirmed') === 'true')
+          document.documentElement.dataset.ageConfirmed = 'true';
+      } catch { /* storage unavailable */ }
+      const locale = navigator.languages?.[0] || navigator.language || '';
+      document.documentElement.lang = saved === 'zh' || (saved !== 'en' && /^zh(?:-|$)/i.test(locale)) ? 'zh-CN' : 'en';
+    })();
+  </script>
   <link rel="icon" type="image/svg+xml" href="./medium-circle-fill.svg" />
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
   <link rel="manifest" href="./manifest.webmanifest" />
@@ -143,7 +156,7 @@ Or perhaps a sliding rheostat at work.</p></div><div class="panel-stats"><span c
   <section id="age-gate" class="age-gate" role="dialog" aria-modal="true" aria-labelledby="age-title" aria-describedby="age-description">
     <div class="age-card">
       <img src="./medium-circle-fill.svg" alt="" width="42" height="42" />
-      <p class="eyebrow">Murphy · User Verify</p>
+      <p class="eyebrow" data-i18n="ageEyebrow">Murphy · User Verify</p>
       <h2 id="age-title" data-i18n="ageTitle">Confirm your age.</h2>
       <p id="age-description" data-i18n="ageDescription">In accordance with relevant laws, we need to know your age in order to provide the corresponding services.<br>Are you 18 years of age or older?</p>
       <div id="age-actions" class="age-actions">
@@ -151,10 +164,34 @@ Or perhaps a sliding rheostat at work.</p></div><div class="panel-stats"><span c
         <button id="age-no" class="btn btn-secondary" type="button" data-i18n="ageNo">No</button>
       </div>
       <div id="age-denied" class="age-denied" role="alert" tabindex="-1" hidden>
-        <p data-i18n="ageDenied">We are unable to provide service to you.</p>
+        <p data-i18n="ageDenied">We cannot provide service to you.</p>
       </div>
     </div>
   </section>
+  <script>
+    // Keep the gate legible in the correct language while modules are loading.
+    if (document.documentElement.lang === 'zh-CN') {
+      document.querySelector('#age-gate .eyebrow').textContent = 'Murphy · 用户验证';
+      document.querySelector('#age-title').textContent = '确认您的年龄。';
+      document.querySelector('#age-description').textContent = '根据有关法律规定，我们需要了解您的年龄以提供对应服务。\n您年满 18 周岁了吗？';
+      document.querySelector('#age-yes').textContent = '是';
+      document.querySelector('#age-no').textContent = '否';
+      document.querySelector('#age-denied p').textContent = '我们无法为您提供服务。';
+    }
+    // Capture age choices even if the main module has not finished loading.
+    document.querySelector('#age-yes').addEventListener('click', (event) => {
+      window.murphyAdultConfirmedThisVisit = true;
+      try { localStorage.setItem('murphy_age_confirmed', 'true'); } catch { /* session only */ }
+      if (!window.murphyBooted) {
+        event.currentTarget.disabled = true;
+        event.currentTarget.textContent = document.documentElement.lang === 'zh-CN' ? '正在加载…' : 'Loading…';
+      }
+    });
+    document.querySelector('#age-no').addEventListener('click', () => {
+      document.querySelector('#age-actions').hidden = true;
+      document.querySelector('#age-denied').hidden = false;
+    });
+  </script>
   <script type="module" src="./main.js"></script>
 </body>
 </html>
